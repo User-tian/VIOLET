@@ -1,0 +1,66 @@
+# @package _global_
+
+# to execute this evaluation run:
+# python src/eval.py experiment=violin_synthesis_inference/violin_synthesis_inference_synth_ablation.yaml
+
+defaults:
+  - override /data: violin.yaml
+  - override /model: violin_dit.yaml
+  - override /encoder: dacvae.yaml
+
+tags: ["violin", "dit", "midiroll", "techroll", "bothadaln", "newcurri", "inference", "no-mosa-flageolet"]
+
+ckpt_path: null
+seed: 12345
+sampler_steps: 30
+sampler_w_tech: 1.0
+sampler_w_cc: 0.0
+
+data:
+  batch_size: 16
+  num_workers: 0
+  midi_note_representation: pianoroll
+  midi_roll_min_pitch: 55
+  midi_roll_max_pitch: 105
+  use_velocity_token: False
+  tech_condition_method: adaln
+  num_techniques: 13
+  mosa_technique_folders: ["normal", "legato", "spiccato", "pizzicato"]
+
+model:
+  use_ema: True
+  ema_ckpt_path: logs/violin_newcurri_newattn_midiroll_techroll_bothadaln/runs/2026-03-21_22-10-42/ema_snapshots/ema_prof_98920
+  log_target_audio_paths: null
+  net:
+    depth: 12
+    num_heads: 12
+    use_cc: True
+    tech_roll_num_techniques: ${data.num_techniques}
+    tech_roll_out_channels: ${data.num_techniques}
+    midi_roll_input_pitches: 51
+    midi_roll_top_k: 4
+    midi_roll_cqt_bins: 84
+    midi_roll_projection: conv1d
+    midi_roll_interp_to_latent: True
+    midi_roll_warmup_frames: 52
+    attention_mode: serial
+    self_rope_rotary_frac: 0.5
+    cross_rope_rotary_frac: 1.0
+    rope_cross_attn_apply_to_v: true
+    audio_use_sinusoidal_pos_emb: false
+    use_self_text_cond: false
+    use_rope_in_cross_attn: true
+    use_absolute_timing_rope_cross_attn: false
+
+  sampler:
+    _target_: src.models.components.sampler_rf.ReflowEulerSampler
+    num_steps: ${sampler_steps}
+    use_heun: True
+    cond_scale: null
+    w_tech: ${sampler_w_tech}
+    w_cc: ${sampler_w_cc}
+
+logger:
+  wandb:
+    tags: ${tags}
+    group: "violin-newcurri-newattn-midiroll-techroll-bothadaln-nomosa-flageolet-inference"

@@ -1,0 +1,17 @@
+# Pro config JBV
+style_sultasto: 54
+style_sulpont: 53
+style_sordino: 52
+style_normal: 51
+legato_portamento: 50
+legato_slur: 49
+legato_bow: 48
+harmonic: 44
+pizzicato: 43
+ricochet: 42
+spiccato: 41
+staccato: 40
+trill_minor: 39
+trill_major: 38
+tremolo: 37
+sustain: 36

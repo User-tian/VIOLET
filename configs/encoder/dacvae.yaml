@@ -1,0 +1,15 @@
+encoder_dim: 64
+encoder_rates: [2, 8, 10, 12]
+latent_dim: 1024
+decoder_dim: 1536
+decoder_rates: [12, 10, 8, 2]
+n_codebooks: 16
+codebook_size: 1024
+codebook_dim: 128
+quantizer_dropout: False
+sample_rate: 48000
+frame_rate: 25.0
+posterior_mode: mean # mean or sample
+base_ckpt: facebook/dacvae-watermarked
+finetuned_ckpt: checkpoints/dacvae_ft/weights.pth # e.g. checkpoints/dacvae_ft/weights.pth
+use_finetuned: True

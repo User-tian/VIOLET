@@ -1,0 +1,23 @@
+_target_: src.data.violin_datamodule.ViolinDataModule
+data_dir: ${paths.root_dir}/data/VIOLET
+mosa_dir: ${paths.root_dir}/data/MOSA_VPT
+batch_size: 16
+num_workers: 4
+target_sample_rate: 48000
+ks_config_path: ${paths.root_dir}/configs/ks_config.yaml
+audio_start_time: 0.0 # only used during validation
+audio_window_seconds: 10.0
+pitch_augmentation: True
+dacvae_posterior_mode: ${encoder.posterior_mode}
+dacvae_ckpt: ${encoder.base_ckpt}
+dacvae_ft_ckpt: ${encoder.finetuned_ckpt}
+dacvae_use_ft: ${encoder.use_finetuned}
+
+# Technique pianoroll conditioning
+tech_condition_method: null  # "crossattn" (default for pianoroll), "concat" (tech pianoroll), or null
+num_techniques: 13  # 0=no technique + 12 technique IDs
+tech_roll_note_duration_seconds: null  # null = match note length; set e.g. 0.04 for fixed 40 ms tech events
+
+# Curriculum schedule
+stage1_steps: 100000
+stage_transition_steps: 0  # Linear blend window after stage1_steps; 0 keeps a hard switch.

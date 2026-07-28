@@ -1,0 +1,47 @@
+# @package _global_
+
+defaults:
+  - _self_
+  - data: eval_midi.yaml # choose datamodule with `test_dataloader()` for evaluation
+  - model: violin_dit.yaml
+  - encoder: dacvae.yaml
+  - logger: tensorboard.yaml
+  - trainer: gpu.yaml
+  - paths: default.yaml
+  - extras: default.yaml
+  - hydra: default.yaml
+  - experiment: violin_synthesis_inference/violin_synthesis_inference.yaml
+
+task_name: "eval"
+
+tags: ["dev"]
+
+# Optional when evaluating from an EMA snapshot via
+# model.use_ema=True and model.ema_ckpt_path/model.ema_resume_path.
+# Still required for standard Lightning checkpoint evaluation.
+ckpt_path: null
+
+# controls Lightning checkpoint restore safety mode (None uses library default)
+# set to False only for trusted checkpoints that need full unpickling
+weights_only: null
+
+# Long-form tiled generation (independent per-window rendering, crossfaded in waveform
+# space — see src/inference/long_audio.py). When enabled, test_step runs tiled synthesis
+# instead of the usual 10s window (still via trainer.test()). MIDI list comes from the
+# same datamodule as normal inference (e.g. data=eval_midi, data=eval_midi_etudes_10s, or
+# data=eval_midi_etudes_30s); set data.data_dir in the corresponding configs/data/*.yaml
+# (or override on the CLI).
+# Example:
+#   python src/eval.py data=eval_midi experiment=violin_synthesis_inference/your_inference.yaml \
+#     +long_audio.enabled=true long_audio.duration_seconds=30
+# Optional one-off file (bypasses datamodule list): long_audio.midi_path=/path/to/one.mid
+long_audio:
+  enabled: false
+  duration_seconds: 30.0
+  overlap: 0.5
+  midi_path: null
+  output_dir: null
+  # If set while processing exactly one MIDI, write to this path instead of long_samples/name_long.wav
+  output_path: null
+  max_batch_windows: null
+  seed: null

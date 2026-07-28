@@ -1,0 +1,25 @@
+# Same pipeline as eval_midi (EvalMidiDataset: recursive *.mid under data_dir).
+# Set data_dir to your etude / second test MIDI folder, then use:
+#   python src/eval.py data=eval_midi_etudes_10s experiment=.../inference.yaml
+# For long audio, add e.g. +long_audio.enabled=true long_audio.duration_seconds=30
+
+_target_: src.data.violin_datamodule.ViolinDataModule
+# <<< Change this to your etude dataset root (glob **/*.mid, **/*.midi) >>>
+data_dir: Eval-midi-etudes-10s
+dataset_name: eval_midi
+batch_size: 1
+num_workers: 4
+target_sample_rate: 48000
+ks_config_path: ${paths.root_dir}/configs/ks_config.yaml
+audio_start_time: 0.0
+audio_window_seconds: 10.0
+pitch_augmentation: False
+use_velocity_token: True
+mosa_include_normal: False
+mosa_technique_folders: []
+tech_roll_note_duration_seconds: null
+
+dacvae_posterior_mode: ${encoder.posterior_mode}
+dacvae_ckpt: ${encoder.base_ckpt}
+dacvae_ft_ckpt: ${encoder.finetuned_ckpt}
+dacvae_use_ft: ${encoder.use_finetuned}

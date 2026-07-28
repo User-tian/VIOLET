@@ -1,0 +1,125 @@
+# @package _global_
+# Curriculum training: step-based (max_epochs=-1).
+# Logging (wandb from train.yaml default):
+#   - Train: metrics (train/loss, etc.) every log_every_n_steps (50).
+#   - Train anchor audio: every log_audio_every_n_steps (5000) via model.log_audio_every_n_steps.
+#   - Validation: every val_check_interval (5000) steps; val/loss and audio samples go to wandb.
+# Progress bar: StepProgressBar shows "Step X/Y" instead of epoch (see callbacks.step_progress_bar).
+
+defaults:
+  - override /data: violin.yaml
+  - override /model: violin_dit.yaml
+  - override /trainer: gpu.yaml
+  - override /encoder: dacvae.yaml
+
+tags: ["violin", "dit", "curriculum"]
+task_name: "violin_curriculum_midiroll_techroll_bothadaln"
+
+# Data overrides
+data:
+  # Datasets
+  dataset_name: "VIOLET" # Primary Synth dataset
+  mosa_dir: "${paths.root_dir}/data/MOSA_VPT"
+
+  # Real Datasets
+  musc_dir: "${paths.root_dir}/data/MUSC"
+  mosa_real_dir: "${paths.root_dir}/data/MOSA_real"
+
+  # Curriculum params
+  stage1_steps: 20000
+  stage_transition_steps: 10000
+  # 2 types of ratio assignments: real:synth or per-dataset ratios
+  # stage1_ratio: 0.8 # 8:2 Real:Synth
+  # stage2_ratio: 0.3 # 3:7 Real:Synth
+  stage1_ratios:
+    violet: 0.1      # 10%
+    mosa_vpt: 0.1    # 10%
+    musc: 0.4    # 40%
+    mosa_real: 0.4   # 40%
+
+  # Optional: different ratios for stage 2
+  stage2_ratios:
+    violet: 0.6     # 60%
+    mosa_vpt: 0.2    # 20%
+    musc: 0.1        # 10%
+    mosa_real: 0.1   # 10%
+
+  batch_size: 16
+  num_workers: 8
+  pin_memory: True
+  non_blocking: True
+  persistent_workers: True
+  pitch_augmentation: True
+  prefetch_factor: 1 # can be null for none
+  # DiT settings
+  use_velocity_token: False
+  midi_note_representation: pianoroll
+
+
+  midi_roll_min_pitch: 55
+  midi_roll_max_pitch: 105
+  tech_condition_method: adaln
+  num_techniques: 13
+
+# Model overrides
+model:
+  ema_resume_path: null
+  ema_resume_nitem: null
+  stage1_steps: ${data.stage1_steps}
+  log_audio_every_n_steps: 5000
+  lr_scheduler_interval: step
+  scheduler:
+    T_max: ${trainer.max_steps}
+
+  net:
+    depth: 12
+    num_heads: 12
+    use_cc: True
+    tech_roll_num_techniques: ${data.num_techniques}
+    tech_roll_out_channels: ${data.num_techniques}
+    # MIDI roll config
+    midi_roll_input_pitches: 51
+    midi_roll_top_k: 4
+    midi_roll_cqt_bins: 84
+    midi_roll_projection: conv1d
+    midi_roll_interp_to_latent: True
+    cond_drop_prob: null
+    midi_cond_drop_prob: 0.0
+    tech_cond_drop_prob: 0.4
+    cc_cond_drop_prob: 0.2
+    # Absolute-timing cross-attention variant
+    # Serial attention block:
+    attention_mode: serial
+    self_rope_rotary_frac: 0.5
+    cross_rope_rotary_frac: 1.0
+    rope_cross_attn_apply_to_v: true
+    audio_use_sinusoidal_pos_emb: false
+    use_self_text_cond: false
+    use_rope_in_cross_attn: true
+    # Absolute-timing RoPE for cross-attention
+    use_absolute_timing_rope_cross_attn: false
+
+trainer:
+  max_steps: 100000 # Total steps (Stage 1 + Stage 2)
+  max_epochs: -1
+  val_check_interval: 5000 # Validate every 5000 batches = steps * accumulate_grad_batches
+  check_val_every_n_epoch: null
+  log_every_n_steps: 50
+
+# Step-based progress bar (no epoch in terminal output)
+callbacks:
+  early_stopping: null
+  step_progress_bar:
+    _target_: src.callbacks.step_progress_bar.StepProgressBar
+  model_checkpoint: # step-based checkpointing
+    _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    dirpath: ${paths.output_dir}/checkpoints
+    filename: "step_{step:06d}"
+    every_n_train_steps: 5000
+    save_top_k: -1
+    monitor: null
+    save_last: True
+
+logger:
+  wandb:
+    name: ${task_name}

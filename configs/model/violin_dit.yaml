@@ -1,0 +1,64 @@
+_target_: src.models.violin_diffusion_module.ViolinDiffusionModule
+
+latent_dim: 128 # DACVAE default
+generated_frame_length: 250 # Adjust based on duration
+audio_sample_rate: 48000
+use_ema: True
+optimizer:
+  _target_: torch.optim.AdamW
+  _partial_: true
+  lr: 1e-4
+  weight_decay: 1e-2
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+  _partial_: true
+  T_max: 1000
+  eta_min: 1e-6
+
+net:
+  _target_: src.models.backbones.dit.DiT
+  input_size: 250
+  in_channels: 128
+  hidden_size: 768
+  depth: 12
+  num_heads: 12
+  tech_vocab_size: 21
+  use_cc: True
+  cc_vocab_size: 128
+  midi_roll_input_pitches: 51
+  midi_roll_top_k: 5
+  midi_roll_cqt_bins: 84
+  midi_roll_projection: conv1d
+  midi_roll_interp_to_latent: True
+  midi_roll_warmup_frames: 0   # pianoroll input frames prepended for causal warmup; 0 = off
+  midi_roll_downsample_factor: 4
+
+diffusion:
+  _target_: src.models.components.diffusion.ReFlow
+
+noise_distribution:
+  _target_: src.models.components.distribution.LogitDistribution
+  logit_mean: 0.0
+  logit_std: 1.0
+  ln_scale: True
+  stratified: True
+
+sampler:
+  _target_: src.models.components.sampler_rf.ReflowEulerSampler
+  num_steps: 30
+  clip_output: null
+
+noise_scheduler:
+  _target_: src.models.components.scheduler.LinearSchedule
+  num_steps: 30
+
+log_audio_every_n_epochs: 1
+log_attention_every_n_steps: null
+log_attention_weights: false
+attention_log_num_blocks: 4
+log_target_audio_paths: ["MID_FiLD_4400_closest_1", "MID_FiLD_4390_closest_2", "MID_FiLD_3354", "MID_FiLD_2571_highest", "MID_FiLD_2255", "MID_FiLD_1418", "MID_FiLD_1370", "MID_FiLD_1250_closest_2", "MID_FiLD_0395_1", "MID_FiLD_3588"]
+codec_posterior_mode: ${encoder.posterior_mode}
+codec_ckpt: ${encoder.base_ckpt}
+codec_ft_ckpt: ${encoder.finetuned_ckpt}
+codec_use_ft: ${encoder.use_finetuned}
