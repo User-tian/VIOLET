@@ -81,7 +81,7 @@ class LabelEmbedder(nn.Module):
             # only embedding is provided
             self.class_embed_norm = L2NormalizationLayer()
             self.label_emb = nn.Linear(class_embed_dim, model_channels)
-            nn.init.normal_(self.null_classes_emb, 0, 1 / model_channels ** 0.5) # TODO: verify
+            nn.init.normal_(self.null_classes_emb, 0, 1 / model_channels ** 0.5)
 
         self.class_to_cond = nn.Sequential(
                 nn.LayerNorm(model_channels),

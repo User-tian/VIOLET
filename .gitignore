@@ -4,7 +4,6 @@ outputs/
 train_FINALS.slurm
 _ISMIR_2026__VIOLET*.pdf
 audio_example/
-midi_example/
 keyswitch_adder/
 
 # Local configuration and credentials

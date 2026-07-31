@@ -52,13 +52,8 @@ data:
   pitch_augmentation: True
   prefetch_factor: 1 # can be null for none
   # DiT settings
-  use_velocity_token: False
-  midi_note_representation: pianoroll
-
-
   midi_roll_min_pitch: 55
   midi_roll_max_pitch: 105
-  tech_condition_method: adaln
   num_techniques: 13
 
 # Model overrides

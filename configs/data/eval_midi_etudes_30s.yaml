@@ -14,7 +14,6 @@ ks_config_path: ${paths.root_dir}/configs/ks_config.yaml
 audio_start_time: 0.0
 audio_window_seconds: 10.0
 pitch_augmentation: False
-use_velocity_token: True
 mosa_include_normal: False
 mosa_technique_folders: []
 tech_roll_note_duration_seconds: null

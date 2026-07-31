@@ -488,8 +488,6 @@ class DiT(nn.Module):
         # concat condition paths and the "downsample" MIDI extractor variant, which were
         # never used by any shipped config, have been removed.
         use_cc=False,
-        cc_vocab_size=128,
-        tech_vocab_size=21,  # 20 content + 1 null; exposed for external null-id lookups
         audio_use_sinusoidal_pos_emb=True,
         midi_roll_input_pitches: int = 51,
         midi_roll_top_k: int = 5,
@@ -521,7 +519,6 @@ class DiT(nn.Module):
         self.tech_roll_temporal_resize_mode = tech_roll_temporal_resize_mode
         self.audio_use_sinusoidal_pos_emb = audio_use_sinusoidal_pos_emb
         self.attention_mode = attention_mode
-        self.tech_vocab_size = tech_vocab_size
 
         self.x_embedder = AudioTokenEmbed(in_channels, hidden_size)
         self.t_embedder = TimestepEmbedder(hidden_size, hidden_size)
@@ -641,15 +638,9 @@ class DiT(nn.Module):
                 classes:Optional[Tensor] = None,         # class labels or class embeddings
                 text_embeds:Optional[Tensor] = None,         # text embeddings
                 text_mask:Optional[Tensor] = None,
-                midi_tokens: Optional[Tensor] = None,
-                tech_tokens: Optional[Tensor] = None,
-                velocity_tokens: Optional[Tensor] = None,
-                pos_midi: Optional[Tensor] = None,
                 cc_tokens: Optional[Tensor] = None,
                 midi_roll: Optional[Tensor] = None,
                 tech_roll: Optional[Tensor] = None,
-                midi_length: Optional[Tensor] = None,
-                tech_length: Optional[Tensor] = None,
                 cc_keep_mask: Optional[Tensor] = None,
                 tech_roll_keep_mask: Optional[Tensor] = None,
                 cond_drop_prob=None,

@@ -273,45 +273,34 @@ class ViolinWaveformDataset(Dataset):
         audio_start_time: float = 0.0,
         audio_window_seconds: Optional[float] = None,
         pitch_augmentation: bool = True,
-        use_velocity_token: bool = True,
         max_files: Optional[int] = None,
         mosa_include_normal: bool = True,
         mosa_technique_folders: Optional[List[str]] = None,
         is_real_dataset: bool = False,
-        midi_note_representation: Optional[str] = None,  # "token", "pianoroll", or "none"
-        use_midi_roll_condition: bool = False,  # legacy, use midi_note_representation instead
         midi_roll_min_pitch: int = 55,
         midi_roll_max_pitch: int = 105,
-        tech_condition_method: Optional[str] = None,  # "crossattn", "concat", "adaln", or None
         num_techniques: int = 13,
         tech_roll_note_duration_seconds: Optional[float] = None,
         leading_silence_prob: float = 0.0,
         leading_silence_delta_ms: int = 30,
     ):
         super().__init__()
-        if midi_note_representation is not None:
-            use_midi_roll_condition = midi_note_representation == "pianoroll"
-
         self.data_dir = data_dir
         self.split = split
         self.dataset_name = dataset_name.lower()
         self.is_real_dataset = is_real_dataset
         self.target_sample_rate = target_sample_rate
         self.pitch_augmentation = pitch_augmentation
-        self.use_velocity_token = use_velocity_token
         self.pitch_shift_prob = 0.5
         self.micro_pitch_shift = 0.1
         self.audio_start_time = audio_start_time
         self.audio_window_seconds = audio_window_seconds
         self.ks_config_path = ks_config_path
         self.mosa_include_normal = mosa_include_normal
-        self.use_midi_roll_condition = use_midi_roll_condition
         self.midi_roll_min_pitch = midi_roll_min_pitch
         self.midi_roll_max_pitch = midi_roll_max_pitch
-        self.tech_condition_method = tech_condition_method
         self.num_techniques = num_techniques
         self.tech_roll_note_duration_seconds = tech_roll_note_duration_seconds
-        self.use_tech_roll = tech_condition_method in ("concat", "adaln")
         self.leading_silence_prob = leading_silence_prob
         self.leading_silence_delta_ms = leading_silence_delta_ms
 
@@ -379,8 +368,8 @@ class ViolinWaveformDataset(Dataset):
             cc_frame_hop=0.04,
             technique_lead=0.01,
             playable_note_min_pitch=55,
-            midi_note_min_pitch=self.midi_roll_min_pitch if self.use_midi_roll_condition else None,
-            midi_note_max_pitch=self.midi_roll_max_pitch if self.use_midi_roll_condition else None,
+            midi_note_min_pitch=self.midi_roll_min_pitch,
+            midi_note_max_pitch=self.midi_roll_max_pitch,
         )
 
         # Caches
@@ -521,8 +510,8 @@ class ViolinWaveformDataset(Dataset):
             cc_frame_hop=self.midi_cfg.cc_frame_hop,
             technique_lead=self.midi_cfg.technique_lead,
             playable_note_min_pitch=self.midi_cfg.playable_note_min_pitch,
-            midi_note_min_pitch=self.midi_roll_min_pitch if self.use_midi_roll_condition else None,
-            midi_note_max_pitch=self.midi_roll_max_pitch if self.use_midi_roll_condition else None,
+            midi_note_min_pitch=self.midi_roll_min_pitch,
+            midi_note_max_pitch=self.midi_roll_max_pitch,
             default_cc1_value=self.midi_cfg.default_cc1_value,
             default_technique_id=self.midi_cfg.default_technique_id,
         )
@@ -633,51 +622,45 @@ class ViolinWaveformDataset(Dataset):
                 technique_id if (v > 0 and 1 <= t <= 128) else 0
                 for t, v in zip(note_tokens, velocity_seq)
             ]
-            # For onset-only mode, rebuild tech_onset_seq from overridden tech_seq (at note-on positions)
-            if self.use_midi_roll_condition:
-                tech_onset_seq = [
-                    tech_seq[i] for i in range(len(tech_seq))
-                    if velocity_seq[i] > 0 and 1 <= note_tokens[i] <= 128
-                ]
+            # Rebuild tech_onset_seq from overridden tech_seq (at note-on positions; onset-only mode)
+            tech_onset_seq = [
+                tech_seq[i] for i in range(len(tech_seq))
+                if velocity_seq[i] > 0 and 1 <= note_tokens[i] <= 128
+            ]
 
-        # If velocity condition is disabled, zero out velocity tokens (padding)
-        if not self.use_velocity_token:
-            velocity_seq = [0] * len(velocity_seq)
+        # Velocity conditioning is not used by the model; always zero it out.
+        velocity_seq = [0] * len(velocity_seq)
 
-        # For midi-roll mode: use tech_onset_seq (one per note onset); else use full tech_seq
-        tech_for_tokens = tech_onset_seq if self.use_midi_roll_condition else tech_seq
+        # Onset-only technique sequence (one per note onset), aligned to the MIDI-roll grid.
+        tech_for_tokens = tech_onset_seq
 
         # Build cropped binary roll from sequence with pitch_shift applied (aligned with audio augmentation)
-        midi_roll = None
-        if self.use_midi_roll_condition:
-            midi_roll = build_cropped_binary_midi_roll(
-                sequence=sequence,
-                start_time=start_time,
-                window_seconds=window_sec,
-                step_seconds=self.midi_cfg.time_step_seconds,
-                min_pitch=self.midi_roll_min_pitch,
-                max_pitch=self.midi_roll_max_pitch,
-                ignore_pitches=self.technique_pitches,
-                pitch_shift=fixed_midi_shift + int_shift,
-            )
+        midi_roll = build_cropped_binary_midi_roll(
+            sequence=sequence,
+            start_time=start_time,
+            window_seconds=window_sec,
+            step_seconds=self.midi_cfg.time_step_seconds,
+            min_pitch=self.midi_roll_min_pitch,
+            max_pitch=self.midi_roll_max_pitch,
+            ignore_pitches=self.technique_pitches,
+            pitch_shift=fixed_midi_shift + int_shift,
+        )
 
-        # Build technique pianoroll when requested by the conditioning path.
-        tech_roll = None
-        if self.use_tech_roll:
-            mosa_tid = technique_id if self.dataset_name == "mosa_vpt" else None
-            tech_roll = build_cropped_tech_roll(
-                sequence=sequence,
-                tech_map=self.technique_mapping,
-                start_time=start_time,
-                window_seconds=window_sec,
-                step_seconds=self.midi_cfg.time_step_seconds,
-                num_techniques=self.num_techniques,
-                technique_lead=self.midi_cfg.technique_lead,
-                tech_note_duration_seconds=self.tech_roll_note_duration_seconds,
-                mosa_technique_id=mosa_tid,
-                playable_note_min_pitch=midi_cfg.playable_note_min_pitch,
-                default_technique_id=midi_cfg.default_technique_id,
-            )
+        # Build technique pianoroll.
+        mosa_tid = technique_id if self.dataset_name == "mosa_vpt" else None
+        tech_roll = build_cropped_tech_roll(
+            sequence=sequence,
+            tech_map=self.technique_mapping,
+            start_time=start_time,
+            window_seconds=window_sec,
+            step_seconds=self.midi_cfg.time_step_seconds,
+            num_techniques=self.num_techniques,
+            technique_lead=self.midi_cfg.technique_lead,
+            tech_note_duration_seconds=self.tech_roll_note_duration_seconds,
+            mosa_technique_id=mosa_tid,
+            playable_note_min_pitch=midi_cfg.playable_note_min_pitch,
+            default_technique_id=midi_cfg.default_technique_id,
+        )
 
         note_tokens = torch.LongTensor(note_tokens)
         tech_tokens = torch.LongTensor(tech_for_tokens)
@@ -698,11 +681,9 @@ class ViolinWaveformDataset(Dataset):
             "pitch_shift": torch.tensor(micro_shift, dtype=torch.float32),
             "instrument_id": torch.tensor(instrument_id, dtype=torch.int64),
             "is_real": torch.tensor(self.is_real_dataset, dtype=torch.bool),
+            "midi_roll": midi_roll,
+            "tech_roll": tech_roll,
         }
-        if midi_roll is not None:
-            item["midi_roll"] = midi_roll
-        if tech_roll is not None:
-            item["tech_roll"] = tech_roll
         return item
 
 
@@ -718,29 +699,20 @@ class EvalMidiDataset(Dataset):
         target_sample_rate: int = 48000,
         ks_config_path: str = "configs/ks_config.yaml",
         audio_window_seconds: float = 10.0,
-        midi_note_representation: Optional[str] = None,  # "token", "pianoroll", or "none"
-        use_midi_roll_condition: bool = False,  # legacy, use midi_note_representation instead
         midi_roll_min_pitch: int = 55,
         midi_roll_max_pitch: int = 105,
-        tech_condition_method: Optional[str] = None,
         num_techniques: int = 13,
         tech_roll_note_duration_seconds: Optional[float] = None,
     ):
         super().__init__()
-        if midi_note_representation is not None:
-            use_midi_roll_condition = midi_note_representation == "pianoroll"
-
         self.data_dir = data_dir
         self.target_sample_rate = target_sample_rate
         self.audio_window_seconds = audio_window_seconds
         self.ks_config_path = ks_config_path
-        self.use_midi_roll_condition = use_midi_roll_condition
         self.midi_roll_min_pitch = midi_roll_min_pitch
         self.midi_roll_max_pitch = midi_roll_max_pitch
-        self.tech_condition_method = tech_condition_method
         self.num_techniques = num_techniques
         self.tech_roll_note_duration_seconds = tech_roll_note_duration_seconds
-        self.use_tech_roll = tech_condition_method in ("concat", "adaln")
 
         # Glob all midi files recursively
         self.midi_files = []
@@ -760,8 +732,8 @@ class EvalMidiDataset(Dataset):
             cc_frame_hop=0.04,
             technique_lead=0.01,
             playable_note_min_pitch=55,
-            midi_note_min_pitch=self.midi_roll_min_pitch if self.use_midi_roll_condition else None,
-            midi_note_max_pitch=self.midi_roll_max_pitch if self.use_midi_roll_condition else None,
+            midi_note_min_pitch=self.midi_roll_min_pitch,
+            midi_note_max_pitch=self.midi_roll_max_pitch,
             default_cc1_value=100,
             default_technique_id=1,
         )
@@ -796,8 +768,8 @@ class EvalMidiDataset(Dataset):
             sequence=sequence
         )
 
-        # For midi-roll mode: use tech_onset_seq (one per note onset); else use full tech_seq
-        tech_for_tokens = tech_onset_seq if self.use_midi_roll_condition else tech_seq
+        # Onset-only technique sequence (one per note onset), aligned to the MIDI-roll grid.
+        tech_for_tokens = tech_onset_seq
 
         # Create tensors
         note_tokens = torch.LongTensor(note_tokens)
@@ -828,30 +800,28 @@ class EvalMidiDataset(Dataset):
             "instrument_id": torch.tensor(0, dtype=torch.int64),
             "is_real": torch.tensor(False, dtype=torch.bool),
         }
-        if self.use_midi_roll_condition:
-            item["midi_roll"] = build_cropped_binary_midi_roll(
-                sequence=sequence,
-                start_time=0.0,
-                window_seconds=self.audio_window_seconds,
-                step_seconds=self.midi_cfg.time_step_seconds,
-                min_pitch=self.midi_roll_min_pitch,
-                max_pitch=self.midi_roll_max_pitch,
-                ignore_pitches=set(self.technique_mapping.keys()),
-                pitch_shift=0,
-            )
-        if self.use_tech_roll:
-            item["tech_roll"] = build_cropped_tech_roll(
-                sequence=sequence,
-                tech_map=self.technique_mapping,
-                start_time=0.0,
-                window_seconds=self.audio_window_seconds,
-                step_seconds=self.midi_cfg.time_step_seconds,
-                num_techniques=self.num_techniques,
-                technique_lead=self.midi_cfg.technique_lead,
-                tech_note_duration_seconds=self.tech_roll_note_duration_seconds,
-                playable_note_min_pitch=self.midi_cfg.playable_note_min_pitch,
-                default_technique_id=self.midi_cfg.default_technique_id,
-            )
+        item["midi_roll"] = build_cropped_binary_midi_roll(
+            sequence=sequence,
+            start_time=0.0,
+            window_seconds=self.audio_window_seconds,
+            step_seconds=self.midi_cfg.time_step_seconds,
+            min_pitch=self.midi_roll_min_pitch,
+            max_pitch=self.midi_roll_max_pitch,
+            ignore_pitches=set(self.technique_mapping.keys()),
+            pitch_shift=0,
+        )
+        item["tech_roll"] = build_cropped_tech_roll(
+            sequence=sequence,
+            tech_map=self.technique_mapping,
+            start_time=0.0,
+            window_seconds=self.audio_window_seconds,
+            step_seconds=self.midi_cfg.time_step_seconds,
+            num_techniques=self.num_techniques,
+            technique_lead=self.midi_cfg.technique_lead,
+            tech_note_duration_seconds=self.tech_roll_note_duration_seconds,
+            playable_note_min_pitch=self.midi_cfg.playable_note_min_pitch,
+            default_technique_id=self.midi_cfg.default_technique_id,
+        )
         return item
 
 
@@ -999,7 +969,6 @@ class ViolinDataModule(LightningDataModule):
         ks_config_path: str = "configs/ks_config.yaml",
         rir_dir: Optional[str] = None,
         pitch_augmentation: bool = True,
-        use_velocity_token: bool = True,
         max_files: Optional[int] = None,
         mosa_include_normal: bool = True,
         mosa_technique_folders: Optional[List[str]] = None,
@@ -1021,11 +990,8 @@ class ViolinDataModule(LightningDataModule):
         dacvae_ckpt: str = "facebook/dacvae-watermarked",
         dacvae_ft_ckpt: Optional[str] = None,
         dacvae_use_ft: bool = False,
-        midi_note_representation: Optional[str] = None,  # "token", "pianoroll", or "none"
-        use_midi_roll_condition: bool = False,  # legacy, use midi_note_representation instead
         midi_roll_min_pitch: int = 55,
         midi_roll_max_pitch: int = 105,
-        tech_condition_method: Optional[str] = None,  # "crossattn", "concat", or None
         num_techniques: int = 13,
         tech_roll_note_duration_seconds: Optional[float] = None,
         silence_pair_prob: float = 0.0,
@@ -1034,11 +1000,6 @@ class ViolinDataModule(LightningDataModule):
     ):
         super().__init__()
         self.save_hyperparameters(logger=False)
-
-        if self.hparams.midi_note_representation is not None:
-            self.hparams.use_midi_roll_condition = (
-                self.hparams.midi_note_representation == "pianoroll"
-            )
 
         self.data_train: Optional[Dataset] = None
         self.data_val: Optional[Dataset] = None
@@ -1051,10 +1012,8 @@ class ViolinDataModule(LightningDataModule):
                 target_sample_rate=self.hparams.target_sample_rate,
                 ks_config_path=self.hparams.ks_config_path,
                 audio_window_seconds=self.hparams.audio_window_seconds if self.hparams.audio_window_seconds else 10.0,
-                use_midi_roll_condition=self.hparams.use_midi_roll_condition,
                 midi_roll_min_pitch=self.hparams.midi_roll_min_pitch,
                 midi_roll_max_pitch=self.hparams.midi_roll_max_pitch,
-                tech_condition_method=self.hparams.tech_condition_method,
                 num_techniques=self.hparams.num_techniques,
                 tech_roll_note_duration_seconds=self.hparams.tech_roll_note_duration_seconds,
             )
@@ -1088,15 +1047,12 @@ class ViolinDataModule(LightningDataModule):
                 audio_start_time=self.hparams.audio_start_time,
                 audio_window_seconds=self.hparams.audio_window_seconds,
                 pitch_augmentation=self.hparams.pitch_augmentation,
-                use_velocity_token=self.hparams.use_velocity_token,
                 max_files=self.hparams.max_files,
                 mosa_include_normal=self.hparams.mosa_include_normal,
                 mosa_technique_folders=self.hparams.mosa_technique_folders,
                 is_real_dataset=False,
-                use_midi_roll_condition=self.hparams.use_midi_roll_condition,
                 midi_roll_min_pitch=self.hparams.midi_roll_min_pitch,
                 midi_roll_max_pitch=self.hparams.midi_roll_max_pitch,
-                tech_condition_method=self.hparams.tech_condition_method,
                 num_techniques=self.hparams.num_techniques,
                 tech_roll_note_duration_seconds=self.hparams.tech_roll_note_duration_seconds,
                 leading_silence_prob=self.hparams.leading_silence_prob,
@@ -1116,15 +1072,12 @@ class ViolinDataModule(LightningDataModule):
                     audio_start_time=self.hparams.audio_start_time,
                     audio_window_seconds=self.hparams.audio_window_seconds,
                     pitch_augmentation=self.hparams.pitch_augmentation,
-                    use_velocity_token=self.hparams.use_velocity_token,
                     max_files=self.hparams.max_files,
                     mosa_include_normal=self.hparams.mosa_include_normal,
                     mosa_technique_folders=self.hparams.mosa_technique_folders,
                     is_real_dataset=False,
-                    use_midi_roll_condition=self.hparams.use_midi_roll_condition,
                     midi_roll_min_pitch=self.hparams.midi_roll_min_pitch,
                     midi_roll_max_pitch=self.hparams.midi_roll_max_pitch,
-                    tech_condition_method=self.hparams.tech_condition_method,
                     num_techniques=self.hparams.num_techniques,
                     tech_roll_note_duration_seconds=self.hparams.tech_roll_note_duration_seconds,
                     leading_silence_prob=self.hparams.leading_silence_prob,
@@ -1144,13 +1097,10 @@ class ViolinDataModule(LightningDataModule):
                     audio_start_time=self.hparams.audio_start_time,
                     audio_window_seconds=self.hparams.audio_window_seconds,
                     pitch_augmentation=self.hparams.pitch_augmentation,
-                    use_velocity_token=self.hparams.use_velocity_token,
                     max_files=self.hparams.max_files,
                     is_real_dataset=True,
-                    use_midi_roll_condition=self.hparams.use_midi_roll_condition,
                     midi_roll_min_pitch=self.hparams.midi_roll_min_pitch,
                     midi_roll_max_pitch=self.hparams.midi_roll_max_pitch,
-                    tech_condition_method=self.hparams.tech_condition_method,
                     num_techniques=self.hparams.num_techniques,
                     tech_roll_note_duration_seconds=self.hparams.tech_roll_note_duration_seconds,
                     leading_silence_prob=self.hparams.leading_silence_prob,
@@ -1169,13 +1119,10 @@ class ViolinDataModule(LightningDataModule):
                     audio_start_time=self.hparams.audio_start_time,
                     audio_window_seconds=self.hparams.audio_window_seconds,
                     pitch_augmentation=self.hparams.pitch_augmentation,
-                    use_velocity_token=self.hparams.use_velocity_token,
                     max_files=self.hparams.max_files,
                     is_real_dataset=True,
-                    use_midi_roll_condition=self.hparams.use_midi_roll_condition,
                     midi_roll_min_pitch=self.hparams.midi_roll_min_pitch,
                     midi_roll_max_pitch=self.hparams.midi_roll_max_pitch,
-                    tech_condition_method=self.hparams.tech_condition_method,
                     num_techniques=self.hparams.num_techniques,
                     tech_roll_note_duration_seconds=self.hparams.tech_roll_note_duration_seconds,
                     leading_silence_prob=self.hparams.leading_silence_prob,
@@ -1261,14 +1208,11 @@ class ViolinDataModule(LightningDataModule):
                 audio_start_time=self.hparams.audio_start_time,
                 audio_window_seconds=self.hparams.audio_window_seconds,
                 pitch_augmentation=self.hparams.pitch_augmentation,
-                use_velocity_token=self.hparams.use_velocity_token,
                 max_files=self.hparams.max_files,
                 mosa_include_normal=self.hparams.mosa_include_normal,
                 mosa_technique_folders=self.hparams.mosa_technique_folders,
-                use_midi_roll_condition=self.hparams.use_midi_roll_condition,
                 midi_roll_min_pitch=self.hparams.midi_roll_min_pitch,
                 midi_roll_max_pitch=self.hparams.midi_roll_max_pitch,
-                tech_condition_method=self.hparams.tech_condition_method,
                 num_techniques=self.hparams.num_techniques,
                 tech_roll_note_duration_seconds=self.hparams.tech_roll_note_duration_seconds,
             )

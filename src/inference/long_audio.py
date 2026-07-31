@@ -162,7 +162,6 @@ def prepare_eval_aligned_windows(
     window_seconds: float,
     overlap: float,
     frame_rate: float,
-    use_velocity_token: bool,
     use_midi_roll: bool,
     use_tech_roll: bool,
     midi_roll_min_pitch: int,
@@ -221,8 +220,8 @@ def prepare_eval_aligned_windows(
 
         tech_for_tokens = tech_onset_seq if use_midi_roll else tech_seq
 
-        if not use_velocity_token:
-            velocity_seq = [0] * len(velocity_seq)
+        # Velocity conditioning is not used by the model; always zero it out.
+        velocity_seq = [0] * len(velocity_seq)
 
         if cc_frames.shape[0] < window_frames:
             pad_size = window_frames - cc_frames.shape[0]
@@ -329,11 +328,10 @@ def long_audio_test_step(model: ViolinDiffusionModule, batch: Any, la: dict) -> 
     dm = model.trainer.datamodule
     hp = _data_hparams(dm)
 
-    use_midi_roll = getattr(hp, "midi_note_representation", None) == "pianoroll" or bool(
-        getattr(hp, "use_midi_roll_condition", False)
-    )
-    tech_m = getattr(hp, "tech_condition_method", None)
-    use_tech_roll = tech_m in ("concat", "adaln")
+    # The datamodule only ever builds pianoroll MIDI + technique-roll conditioning
+    # (no token/crossattn/concat representation), and never uses velocity.
+    use_midi_roll = True
+    use_tech_roll = True
 
     ks_path = Path(getattr(hp, "ks_config_path", "configs/ks_config.yaml"))
     if not ks_path.is_absolute():
@@ -342,7 +340,6 @@ def long_audio_test_step(model: ViolinDiffusionModule, batch: Any, la: dict) -> 
     technique_map = load_technique_map(ks_path)
     technique_pitch_keys = set(technique_map.keys())
 
-    use_velocity_token = bool(getattr(hp, "use_velocity_token", True))
     midi_roll_min_pitch = int(getattr(hp, "midi_roll_min_pitch", 55))
     midi_roll_max_pitch = int(getattr(hp, "midi_roll_max_pitch", 105))
     num_techniques = int(getattr(hp, "num_techniques", 13))
@@ -412,7 +409,6 @@ def long_audio_test_step(model: ViolinDiffusionModule, batch: Any, la: dict) -> 
             window_seconds=window_seconds,
             overlap=overlap,
             frame_rate=frame_rate,
-            use_velocity_token=use_velocity_token,
             use_midi_roll=use_midi_roll,
             use_tech_roll=use_tech_roll,
             midi_roll_min_pitch=midi_roll_min_pitch,

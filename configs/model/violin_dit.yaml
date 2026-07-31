@@ -23,9 +23,7 @@ net:
   hidden_size: 768
   depth: 12
   num_heads: 12
-  tech_vocab_size: 21
   use_cc: True
-  cc_vocab_size: 128
   midi_roll_input_pitches: 51
   midi_roll_top_k: 5
   midi_roll_cqt_bins: 84

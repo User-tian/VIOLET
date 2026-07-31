@@ -19,11 +19,8 @@ sampler_w_cc: 0.0
 data:
   batch_size: 16
   num_workers: 0
-  midi_note_representation: pianoroll
   midi_roll_min_pitch: 55
   midi_roll_max_pitch: 105
-  use_velocity_token: False
-  tech_condition_method: adaln
   num_techniques: 13
 
 model:

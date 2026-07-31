@@ -398,45 +398,26 @@ class ViolinDiffusionModule(LightningModule):
         # "annotated as none"; the *_keep_mask tensors record which samples were rewritten.
         kwargs = {}
         for key in (
-            "midi_tokens",
-            "tech_tokens",
-            "velocity_tokens",
-            "pos_midi",
             "cc_tokens",
             "midi_roll",
             "tech_roll",
-            "midi_length",
-            "tech_length",
         ):
             if key in batch and batch[key] is not None:
                 kwargs[key] = batch[key]
 
         tech_present = None
-        if "tech_tokens" in kwargs:
-            tech_present = self._sample_has_nonzero(kwargs["tech_tokens"], batch.get("tech_length"))
         if "tech_roll" in kwargs:
-            tech_roll_present = self._sample_has_nonzero(kwargs["tech_roll"])
-            tech_present = tech_roll_present if tech_present is None else (tech_present | tech_roll_present)
+            tech_present = self._sample_has_nonzero(kwargs["tech_roll"])
 
         if tech_present is not None:
             missing_tech = ~tech_present
             if missing_tech.any():
-                if "tech_tokens" in kwargs:
-                    tech_vocab_size = getattr(self.net, "tech_vocab_size", 21)
-                    null_tech_id = tech_vocab_size - 1
-                    missing_tech_expanded = rearrange(missing_tech, "b -> b 1").expand_as(kwargs["tech_tokens"])
-                    kwargs["tech_tokens"] = torch.where(
-                        missing_tech_expanded,
-                        torch.full_like(kwargs["tech_tokens"], null_tech_id),
-                        kwargs["tech_tokens"],
-                    )
-                if "tech_roll" in kwargs:
-                    missing_tech_roll = rearrange(missing_tech, "b -> b 1 1").expand_as(kwargs["tech_roll"])
-                    kwargs["tech_roll"] = torch.where(
-                        missing_tech_roll,
-                        torch.zeros_like(kwargs["tech_roll"]),
-                        kwargs["tech_roll"],
-                    )
+                missing_tech_roll = rearrange(missing_tech, "b -> b 1 1").expand_as(kwargs["tech_roll"])
+                kwargs["tech_roll"] = torch.where(
+                    missing_tech_roll,
+                    torch.zeros_like(kwargs["tech_roll"]),
+                    kwargs["tech_roll"],
+                )
                 kwargs["tech_roll_keep_mask"] = rearrange(tech_present, "b -> b 1 1").to(dtype=torch.float32)
 
         if "cc_tokens" in kwargs:

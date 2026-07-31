@@ -1,72 +1,72 @@
-# Raw duration-conditioned weights used by the CSV-TD annotation pipeline.
-# Legato and non-legato subsets are normalized independently at sampling time.
+# Rounded duration-conditioned heuristic weights for CSV-TD annotation.
+# Non-legato and legato subsets each sum to 1.00 when active.
 
 "<=0.15":
-  sustain: 0.0000
-  spiccato: 0.3333
-  ricochet: 0.1111
-  pizzicato: 0.2778
-  tremolo: 0.0556
-  staccato: 0.2222
-  harmonic: 0.0000
-  trill_major: 0.0000
-  trill_minor: 0.0000
-  legato_bow: 0.0000
-  legato_slur: 0.0000
-  legato_portamento: 0.0000
+  sustain: 0.00
+  spiccato: 0.33
+  ricochet: 0.11
+  pizzicato: 0.28
+  tremolo: 0.06
+  staccato: 0.22
+  harmonic: 0.00
+  trill_major: 0.00
+  trill_minor: 0.00
+  legato_bow: 0.00
+  legato_slur: 0.00
+  legato_portamento: 0.00
 
 "0.15-0.40":
-  sustain: 0.0000
-  spiccato: 0.2202
-  ricochet: 0.0712
-  pizzicato: 0.1599
-  tremolo: 0.0539
-  staccato: 0.1642
-  harmonic: 0.0000
-  trill_major: 0.0000
-  trill_minor: 0.0000
-  legato_bow: 0.3897
-  legato_slur: 0.1773
-  legato_portamento: 0.0882
+  sustain: 0.00
+  spiccato: 0.33
+  ricochet: 0.10
+  pizzicato: 0.24
+  tremolo: 0.08
+  staccato: 0.25
+  harmonic: 0.00
+  trill_major: 0.00
+  trill_minor: 0.00
+  legato_bow: 0.60
+  legato_slur: 0.27
+  legato_portamento: 0.13
 
 "0.40-0.80":
-  sustain: 0.0702
-  spiccato: 0.0972
-  ricochet: 0.0128
-  pizzicato: 0.0562
-  tremolo: 0.0215
-  staccato: 0.1210
-  harmonic: 0.0000
-  trill_major: 0.0033
-  trill_minor: 0.0033
-  legato_bow: 0.1985
-  legato_slur: 0.3717
-  legato_portamento: 0.0502
+  sustain: 0.18
+  spiccato: 0.25
+  ricochet: 0.03
+  pizzicato: 0.15
+  tremolo: 0.06
+  staccato: 0.31
+  harmonic: 0.00
+  trill_major: 0.01
+  trill_minor: 0.01
+  legato_bow: 0.32
+  legato_slur: 0.60
+  legato_portamento: 0.08
 
 "0.80-2.00":
-  sustain: 0.3262
-  spiccato: 0.0000
-  ricochet: 0.0097
-  pizzicato: 0.0000
-  tremolo: 0.0936
-  staccato: 0.0000
-  harmonic: 0.0463
-  trill_major: 0.0097
-  trill_minor: 0.0097
-  legato_bow: 0.1216
-  legato_slur: 0.3212
-  legato_portamento: 0.0234
+  sustain: 0.66
+  spiccato: 0.00
+  ricochet: 0.02
+  pizzicato: 0.00
+  tremolo: 0.19
+  staccato: 0.00
+  harmonic: 0.09
+  trill_major: 0.02
+  trill_minor: 0.02
+  legato_bow: 0.26
+  legato_slur: 0.69
+  legato_portamento: 0.05
 
 ">2.00":
-  sustain: 0.3997
-  spiccato: 0.0000
-  ricochet: 0.0000
-  pizzicato: 0.0000
-  tremolo: 0.0650
-  staccato: 0.0000
-  harmonic: 0.0477
-  trill_major: 0.0239
-  trill_minor: 0.0239
-  legato_bow: 0.0997
-  legato_slur: 0.3402
-  legato_portamento: 0.0320
+  sustain: 0.71
+  spiccato: 0.00
+  ricochet: 0.00
+  pizzicato: 0.00
+  tremolo: 0.12
+  staccato: 0.00
+  harmonic: 0.09
+  trill_major: 0.04
+  trill_minor: 0.04
+  legato_bow: 0.21
+  legato_slur: 0.72
+  legato_portamento: 0.07

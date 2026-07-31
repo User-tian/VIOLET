@@ -25,10 +25,9 @@ The end-to-end flow has three stages:
 
 | Stage | Folder | What it does |
 |-------|--------|--------------|
-| 1 | [`split_symphony/`](split_symphony/) | Split/flatten source MIDI into monophonic solo-violin lines. |
-| 2 | [`keyswitch_assignment/`](keyswitch_assignment/) | Assign note-level techniques and write them as MIDI keyswitches below the violin range. |
-| 3 | Not distributed | Render annotated MIDI with the commercial Kontakt instrument used for CSV-TD. |
+| 1 | [`split_symphony/`](split_symphony/) | Measure polyphony and generate closest-pitch/highest-pitch solo-line variants. |
+| 2 | [`keyswitch_assignment/`](keyswitch_assignment/) | Generate overlaps, assign note-level techniques, and write keyswitches below the violin range. |
+| 3 | See main [`README.md`](../README.md) for Batched offline MIDI2Audio renderer | Render annotated MIDI with the commercial Kontakt instrument used for CSV-TD. |
 
 The keyswitch numbering used across stages 2–3 matches [`../configs/ks_config.yaml`](../configs/ks_config.yaml)
 and the technique-ID mapping in [`../src/data/components/midi_processor.py`](../src/data/components/midi_processor.py).
-The commercial sample library and the project-specific batch renderer are not distributed.

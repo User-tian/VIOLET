@@ -23,15 +23,25 @@ backbone via Adaptive Layer Normalization (AdaLN).
 - 📦 [**Dataset**](https://huggingface.co/datasets/User-tian/CSV-TD)
 - 🎹 [**Batched offline MIDI2Audio renderer**](https://github.com/User-tian/MidiForge)
 
+## Release checklist
+
+Keep this list limited to public release metadata and assets; track implementation work in
+GitHub Issues.
+
+- [ ] After the arXiv submission, add the paper link and final authors to the BibTeX citation.
+- [ ] Publish the VIOLET and DACVAE checkpoints and fill in both checkpoint links.
+- [ ] Upload the excerpts used in the subjective study.
+- [ ] Document the separate distribution terms for datasets and checkpoints.
+
 ## Checkpoints
 
 Pre-trained checkpoints are hosted at the link below. Download and place them under
 `checkpoints/` (or point the config `ckpt_path` to their location).
 
-| Model | Description | Link |
-|-------|-------------|------|
-| VIOLET (Full) | DiT latent-diffusion model trained on all corpora | [TODO] |
-| DACVAE (violin) | Fine-tuned DACVAE decoder for 48 kHz violin | [TODO] |
+| Model | Description |
+|-------|-------------|
+| VIOLET (Full) | DiT latent-diffusion model trained on all corpora |
+| DACVAE (violin) | Fine-tuned DACVAE decoder for 48 kHz violin |
 
 ## Setup
 
@@ -139,7 +149,11 @@ VIOLET is trained in two stages:
 
 1. **DACVAE fine-tuning.** We fine-tune the decoder of DACVAE (the VAE variant of the
    Descript Audio Codec) on violin recordings. The codec is then frozen and provides a
-   25 Hz latent representation (40 ms per frame) for 48 kHz mono audio.
+   25 Hz latent representation (40 ms per frame) for 48 kHz mono audio. We fine-tuned using
+   the training/fine-tuning instructions from
+   [descript-audio-codec](https://github.com/descriptinc/descript-audio-codec) (the
+   `descript-audiotools` recipe DAC itself is trained with), using the **audio portion of
+   all four datasets** below (CSV-TD, MOSA, MUSC, MOSA_VPT) as the fine-tuning corpus.
 2. **Latent diffusion (DiT).** A Diffusion Transformer is trained with a rectified-flow
    objective to generate audio latents. MIDI, technique, and dynamics conditions are
    embedded, aligned to the latent frame rate, and injected via AdaLN-Zero. At inference,
@@ -171,19 +185,20 @@ To our knowledge, no public violin dataset provides the aligned **MIDI notes**,
 controllable synthesis. We therefore built **CSV-TD** by rendering symbolically-controlled
 MIDI through a commercial virtual instrument. Because we own the exact symbolic controls
 used to drive the renderer, every audio frame comes with perfectly-aligned MIDI, technique,
-and dynamics annotations "for free" — no forced alignment or transcription is required.
+and dynamics annotations with no forced alignment or transcription required.
 
-The creation pipeline has three stages (tools live in [`dataset_tools/`](dataset_tools/)):
+The creation pipeline has four stages (tools live in [`dataset_tools/`](dataset_tools/)):
 
-1. **Source MIDI + dynamics.** We start from [MID_FiLD](https://github.com/) as the source
-   material because it ships **human-written dynamics curves** (MIDI CC1), giving expressive,
-   musically-plausible loudness shaping rather than synthetic envelopes.
+1. **Source MIDI + dynamics.** We start from
+  [MID-FiLD](https://github.com/pozalabs/MID-FiLD) ([Ryu et al., 2024](https://doi.org/10.1609/aaai.v38i1.27774))
+  as the source material because it ships **human-written dynamics curves** (MIDI CC1),
+  giving expressive, musically-plausible loudness shaping rather than synthetic envelopes.
 2. **Monophonic line extraction** ([`dataset_tools/split_symphony/`](dataset_tools/split_symphony/)).
-  We extract monophonic lines suitable for solo violin rendering, resolving polyphony into
-  separate melodic voices while preserving the original CC1 dynamics.
+  We measure each file's polyphony rate and use closest-pitch and highest-pitch extraction
+  methods to create multiple solo-line variants while preserving the original CC1 dynamics.
 3. **Technique annotation** ([`dataset_tools/keyswitch_assignment/`](dataset_tools/keyswitch_assignment/)).
-   We assign a technique to every note and encode it as a **MIDI keyswitch below the violin
-   range** (the playable range is G3–A7, so keyswitches never collide with real notes). Labels
+  We generate short overlaps for connected notes, assign a technique to every note, and
+  encode it as a **MIDI keyswitch below the violin range** (the playable range is G3–A7, so keyswitches never collide with real notes). Labels
    are assigned with **duration-based probabilistic heuristics** that mirror idiomatic writing:
    short notes are more likely to be *spiccato / staccato / pizzicato*, while long notes are more
    likely to be *legato / trill / harmonic*.
@@ -194,7 +209,7 @@ The creation pipeline has three stages (tools live in [`dataset_tools/`](dataset
 
 **Dynamics representation.** Continuous dynamics come from **MIDI CC1**. CC1 events (0–127)
 are min-max normalized to [0, 1] and expanded with a zero-order hold, producing a
-piecewise-constant, frame-aligned dynamics curve used as a conditioning signal.
+piecewise-constant, frame-aligned dynamics curve used as a conditioning signal. Note that in the training set, CC#1 and CC#11 are both present with exact same values. In the test set we condition on one of 4 normalized dynamics patterns and only CC#1 is present.
 
 ### The 12 playing techniques
 
@@ -251,7 +266,7 @@ evaluation we curated **7 single-technique excerpts** (one per technique above) 
 @inproceedings{violet2026,
   title     = {{VIOLET}: High-Fidelity Violin Synthesis with Techniques and Dynamics},
   author    = {TODO: authors},
-  booktitle = {Proceedings of the 27th International Society for Music Information Retrieval Conference (ISMIR)},
+  booktitle = {Proc. of the 27th Int. Society for Music Information Retrieval Conf.},
   year      = {2026},
   address   = {Abu Dhabi, UAE}
 }
@@ -267,4 +282,6 @@ This codebase builds on ideas and tooling from:
 
 ## License
 
-Released under the [MIT License](LICENSE).
+The source code is released under the [MIT License](LICENSE). Linked datasets, pretrained
+checkpoints, commercial sample libraries, and other third-party assets retain their own terms
+and are not relicensed by this repository.
