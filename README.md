@@ -21,6 +21,7 @@ backbone via Adaptive Layer Normalization (AdaLN).
 - 📄 **Paper:** [TODO: add arXiv URL]
 - 💾 [**Checkpoints**](https://huggingface.co/datasets/User-tian/VIOLET)
 - 📦 [**Dataset**](https://huggingface.co/datasets/User-tian/CSV-TD)
+- 🎼 [**Subjective-study excerpts**](subjective_study/)
 - 🎹 [**Batched offline MIDI2Audio renderer**](https://github.com/User-tian/MidiForge)
 
 ## Release checklist
@@ -30,7 +31,7 @@ GitHub Issues.
 
 - [ ] After the arXiv submission, add the paper link and final authors to the BibTeX citation.
 - [ ] Publish the VIOLET and DACVAE checkpoints and fill in both checkpoint links.
-- [ ] Upload the excerpts used in the subjective study.
+- [x] Upload the [excerpts used in the subjective study](subjective_study/).
 - [ ] Document the separate distribution terms for datasets and checkpoints.
 
 ## Checkpoints
@@ -247,8 +248,12 @@ evaluation focus on the **7 most common/representative techniques**:
 > **harmonic, pizzicato, slur legato, spiccato, staccato, major trill, minor trill.**
 
 Objective evaluation is run on the **CSV-TD test set** (686 pairs, 3.7 h). For subjective
-evaluation we curated **7 single-technique excerpts** (one per technique above) plus
-**3 multi-technique excerpts** that each combine several techniques.
+evaluation we curated **7 single-technique excerpts** plus **3 multi-technique excerpts**
+that each combine several techniques. The released single-technique set contains two
+harmonic excerpts and one each for pizzicato, slur legato, spiccato, staccato, and trill;
+its score metadata uses `trill` as an umbrella label for the two trill conditioning
+classes. The [scores, MIDI files, and metadata](subjective_study/) are included in this
+repository.
 
 ### Additional corpora
 

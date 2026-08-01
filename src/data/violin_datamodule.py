@@ -1326,12 +1326,21 @@ class ViolinDataModule(LightningDataModule):
 
     def train_dataloader(self):
         if isinstance(self.data_train, IterableDataset) and hasattr(self.data_train, "configure_schedule"):
-            accumulate_grad_batches = getattr(getattr(self, "trainer", None), "accumulate_grad_batches", 1)
+            trainer = getattr(self, "trainer", None)
+            accumulate_grad_batches = getattr(trainer, "accumulate_grad_batches", 1)
             try:
                 accumulate_grad_batches = int(accumulate_grad_batches)
             except (TypeError, ValueError):
                 accumulate_grad_batches = 1
-            self.data_train.configure_schedule(accumulate_grad_batches=accumulate_grad_batches)
+            initial_optimizer_step = getattr(trainer, "global_step", 0)
+            try:
+                initial_optimizer_step = int(initial_optimizer_step)
+            except (TypeError, ValueError):
+                initial_optimizer_step = 0
+            self.data_train.configure_schedule(
+                accumulate_grad_batches=accumulate_grad_batches,
+                initial_optimizer_step=initial_optimizer_step,
+            )
 
         return DataLoader(
             dataset=self.data_train,

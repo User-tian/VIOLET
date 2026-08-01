@@ -1,0 +1,9 @@
+{
+  "title": "La Cinquantaine",
+  "composer": "Jean Gabriel-Marie",
+  "year": 1887,
+  "techniques_covered": ["slur_legato", "spiccato", "trill", "harmonic"],
+  "difficulty_level": "easy-intermediate",
+  "score_file": "score.pdf",
+  "midi_files": ["excerpt.mid"]
+}

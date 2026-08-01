@@ -1,0 +1,9 @@
+{
+  "title": "Csárdás",
+  "composer": "Vittorio Monti",
+  "year": 1904,
+  "techniques_covered": ["harmonic"],
+  "difficulty_level": "advanced",
+  "score_file": "czardas.pdf",
+  "midi_files": ["czardas.mid"]
+}

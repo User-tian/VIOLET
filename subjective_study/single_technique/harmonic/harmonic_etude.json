@@ -1,0 +1,9 @@
+{
+  "title": "Harmonic Etude",
+  "composer": "Cynthia Lu",
+  "year": 2026,
+  "techniques_covered": ["harmonic"],
+  "difficulty_level": "easy-intermediate",
+  "score_file": "harmonic_etude.pdf",
+  "midi_files": ["harmonic_etude.mid"]
+}

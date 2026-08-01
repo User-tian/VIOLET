@@ -1,0 +1,9 @@
+{
+  "title": "Two Guitars",
+  "composer": "Traditional",
+  "year": "19th century",
+  "techniques_covered": ["pizzicato"],
+  "difficulty_level": "intermediate",
+  "score_file": "two_guitars.pdf",
+  "midi_files": ["two_guitars_1.mid", "two_guitars_2.mid"]
+}

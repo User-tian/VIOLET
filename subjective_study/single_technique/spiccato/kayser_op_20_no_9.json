@@ -1,0 +1,9 @@
+{
+  "title": "Kayser Op. 20 No. 9",
+  "composer": "Heinrich Ernst Kayser",
+  "year": 1848,
+  "techniques_covered": ["spiccato"],
+  "difficulty_level": "intermediate",
+  "score_file": "kayser_op_20_no_9.pdf",
+  "midi_files": ["kayser_op_20_no_9_1.mid", "kayser_op_20_no_9_2.mid"]
+}

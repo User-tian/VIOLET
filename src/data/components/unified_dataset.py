@@ -43,6 +43,7 @@ class UnifiedViolinDataset(IterableDataset):
         self.stage1_ratios = stage1_ratios
         self.stage2_ratios = stage2_ratios
         self.accumulate_grad_batches = max(int(accumulate_grad_batches), 1)
+        self.initial_optimizer_step = 0
         self.seed = seed
 
         # Only include non-empty datasets in the sampling pool (avoid randint(0,0) error)
@@ -79,15 +80,22 @@ class UnifiedViolinDataset(IterableDataset):
         self.real_dataset = ConcatDataset(real_list) if real_list else _EmptyDataset()
         self.synth_dataset = ConcatDataset(synth_list) if synth_list else _EmptyDataset()
 
-    def configure_schedule(self, accumulate_grad_batches: int = 1) -> None:
+    def configure_schedule(
+        self,
+        accumulate_grad_batches: int = 1,
+        initial_optimizer_step: int = 0,
+    ) -> None:
         self.accumulate_grad_batches = max(int(accumulate_grad_batches), 1)
+        self.initial_optimizer_step = max(int(initial_optimizer_step), 0)
 
     def _estimated_optimizer_step(self, local_step: int, num_workers: int) -> float:
         samples_per_optimizer_step = max(
             1,
             self.batch_size * self.accumulate_grad_batches,
         )
-        return (local_step * num_workers) / float(samples_per_optimizer_step)
+        return self.initial_optimizer_step + (
+            (local_step * num_workers) / float(samples_per_optimizer_step)
+        )
 
     def _weights_for_step(self, optimizer_step_est: float) -> np.ndarray:
         if self.stage_transition_steps <= 0:

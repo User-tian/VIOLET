@@ -1,0 +1,9 @@
+{
+  "title": "Violin Concerto No. 1 in A minor, BWV 1041",
+  "composer": "Johann Sebastian Bach",
+  "year": 1720,
+  "techniques_covered": ["slur_legato", "staccato", "trill"],
+  "difficulty_level": "advanced",
+  "score_file": "score.pdf",
+  "midi_files": ["excerpt.mid"]
+}

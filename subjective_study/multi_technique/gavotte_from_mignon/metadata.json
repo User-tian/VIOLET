@@ -1,0 +1,9 @@
+{
+  "title": "Gavotte from Mignon",
+  "composer": "Ambroise Thomas",
+  "year": 1866,
+  "techniques_covered": ["slur_legato", "spiccato", "trill", "pizzicato"],
+  "difficulty_level": "easy",
+  "score_file": "score.pdf",
+  "midi_files": ["excerpt.mid"]
+}
