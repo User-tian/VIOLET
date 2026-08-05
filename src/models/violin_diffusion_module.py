@@ -53,6 +53,7 @@ class ViolinDiffusionModule(LightningModule):
         use_ema: bool = True,
         use_phema: bool = False,
         num_ema_snapshot_item: Optional[int] = 96000,
+        max_ema_snapshots: Optional[int] = 3,
         ema_resume_path: Optional[str] = None,  # Path to EMA snapshot for resuming training
         ema_resume_nitem: Optional[int] = None,  # cur_nitem value when EMA was saved (for correct decay)
         total_test_samples: Optional[int] = None,
@@ -64,7 +65,7 @@ class ViolinDiffusionModule(LightningModule):
         codec_use_ft: bool = False,
         log_audio_every_n_epochs: int = 5,
         log_audio_every_n_steps: Optional[int] = None,  # If set, log train anchor audio every N steps (for step-based training)
-        log_attention_every_n_steps: Optional[int] = None,  # If set, log attention weights to wandb every N steps (DiT with serial attn)
+        log_attention_every_n_steps: Optional[int] = None,  # If set, log DiT self-attention weights to wandb every N steps
         log_attention_weights: bool = True,  # If True, request return_attn_weights when logging attention (disable to save compute)
         attention_log_num_blocks: int = 4,  # Number of blocks to visualize for attention logging
         cc_frame_rate: float = 25.0, # Default frame rate for CC tokens
@@ -105,6 +106,7 @@ class ViolinDiffusionModule(LightningModule):
         self.use_phema = use_phema
         self.cur_nitem = 0
         self.num_ema_snapshot_item = num_ema_snapshot_item
+        self.max_ema_snapshots = None if max_ema_snapshots is None else max(int(max_ema_snapshots), 1)
         self.ema_resume_path = ema_resume_path
         self.ema_resume_nitem = ema_resume_nitem
         self.ema_ckpt_path = ema_ckpt_path
@@ -150,12 +152,141 @@ class ViolinDiffusionModule(LightningModule):
         self._wandb_static_logged_keys: set[str] = set()
         self._wandb_step_metric_defined = False
 
+    @staticmethod
+    def _is_legacy_dit_parameter(name: str) -> bool:
+        return (
+            name in {"pos_embed", "net.pos_embed"}
+            or ".cross_attn." in name
+            or ".self_attn.to_context." in name
+        )
+
+    @staticmethod
+    def _migrate_modulation_tensor(tensor: torch.Tensor, target_shape: torch.Size) -> torch.Tensor:
+        if tensor.shape == target_shape:
+            return tensor
+        if (
+            tensor.ndim == len(target_shape)
+            and tensor.shape[0] % 9 == 0
+            and tensor.shape[0] * 2 == target_shape[0] * 3
+            and tensor.shape[1:] == target_shape[1:]
+        ):
+            hidden_size = tensor.shape[0] // 9
+            return torch.cat((tensor[:3 * hidden_size], tensor[6 * hidden_size:]), dim=0).contiguous()
+        raise RuntimeError(
+            f"Cannot migrate modulation tensor with shape {tuple(tensor.shape)} "
+            f"to {tuple(target_shape)}."
+        )
+
+    @classmethod
+    def _migrate_legacy_dit_state_dict(
+        cls,
+        state_dict: dict[str, torch.Tensor],
+        target_state_dict: dict[str, torch.Tensor],
+    ) -> int:
+        legacy_keys = [key for key in state_dict if cls._is_legacy_dit_parameter(key)]
+        migrated_tensors = 0
+        for key, target in target_state_dict.items():
+            source = state_dict.get(key)
+            if source is None or source.shape == target.shape:
+                continue
+            if "blocks." not in key or "_modulation.1." not in key:
+                raise RuntimeError(
+                    f"Unexpected checkpoint shape mismatch for {key}: "
+                    f"{tuple(source.shape)} vs {tuple(target.shape)}."
+                )
+            state_dict[key] = cls._migrate_modulation_tensor(source, target.shape)
+            migrated_tensors += 1
+
+        for key in legacy_keys:
+            state_dict.pop(key, None)
+        return migrated_tensors
+
+    def _migrate_legacy_optimizer_state(self, checkpoint: dict, state_dict: dict[str, torch.Tensor]) -> bool:
+        if not any(self._is_legacy_dit_parameter(key) for key in state_dict):
+            return False
+
+        optimizer_states = checkpoint.get("optimizer_states")
+        if not optimizer_states:
+            return False
+        if len(optimizer_states) != 1 or len(optimizer_states[0].get("param_groups", [])) != 1:
+            raise RuntimeError("Legacy DiT checkpoint migration expects one optimizer with one parameter group.")
+
+        optimizer_state = optimizer_states[0]
+        old_group = optimizer_state["param_groups"][0]
+        old_ids = old_group["params"]
+        current_named_parameters = [
+            (f"net.{name}", parameter) for name, parameter in self.net.named_parameters()
+        ]
+        current_names = {name for name, _parameter in current_named_parameters}
+        old_names = [
+            key for key in state_dict
+            if key in current_names or self._is_legacy_dit_parameter(key)
+        ]
+        if len(old_names) != len(old_ids):
+            raise RuntimeError(
+                "Cannot map legacy optimizer parameters by name: "
+                f"derived {len(old_names)} names for {len(old_ids)} optimizer IDs."
+            )
+
+        old_id_by_name = dict(zip(old_names, old_ids))
+        old_parameter_states = optimizer_state.get("state", {})
+        new_parameter_states = {}
+        for new_id, (name, parameter) in enumerate(current_named_parameters):
+            old_id = old_id_by_name.get(name)
+            if old_id is None or old_id not in old_parameter_states:
+                continue
+            migrated_state = {}
+            for state_name, value in old_parameter_states[old_id].items():
+                if isinstance(value, torch.Tensor) and value.ndim > 0 and value.shape != parameter.shape:
+                    if "blocks." not in name or "_modulation.1." not in name:
+                        raise RuntimeError(
+                            f"Unexpected optimizer-state shape mismatch for {name}.{state_name}: "
+                            f"{tuple(value.shape)} vs {tuple(parameter.shape)}."
+                        )
+                    value = self._migrate_modulation_tensor(value, parameter.shape)
+                migrated_state[state_name] = value
+            new_parameter_states[new_id] = migrated_state
+
+        new_group = dict(old_group)
+        new_group["params"] = list(range(len(current_named_parameters)))
+        optimizer_state["state"] = new_parameter_states
+        optimizer_state["param_groups"] = [new_group]
+        return True
+
+    def on_load_checkpoint(self, checkpoint: dict) -> None:
+        self._checkpoint_global_step = int(checkpoint.get("global_step", 0) or 0)
+        self._checkpoint_ema_state = checkpoint.get("ema_state_dict")
+        self._checkpoint_ema_cur_nitem = checkpoint.get("ema_cur_nitem")
+        state_dict = checkpoint.get("state_dict")
+        if not isinstance(state_dict, dict):
+            return
+        optimizer_migrated = self._migrate_legacy_optimizer_state(checkpoint, state_dict)
+        migrated_tensors = self._migrate_legacy_dit_state_dict(state_dict, self.state_dict())
+        for key in [key for key in state_dict if key.startswith("codec_model.")]:
+            state_dict.pop(key)
+        if migrated_tensors or optimizer_migrated:
+            print(
+                "Migrated legacy serial-attention checkpoint to pure self-attention "
+                f"({migrated_tensors} modulation tensors; optimizer={'yes' if optimizer_migrated else 'no'})."
+            )
+
+    def on_save_checkpoint(self, checkpoint: dict) -> None:
+        state_dict = checkpoint.get("state_dict")
+        if isinstance(state_dict, dict):
+            for key in [key for key in state_dict if key.startswith("codec_model.")]:
+                state_dict.pop(key)
+        if self.use_ema and hasattr(self, "ema_prof"):
+            checkpoint["ema_state_dict"] = self.ema_prof.state_dict()
+            checkpoint["ema_cur_nitem"] = int(self.cur_nitem)
+
     def load_state_dict(self, state_dict, strict=True):
         """
         Override load_state_dict to handle incompatible keys between training and inference configs.
 
         This is particularly important when the model architecture changes slightly between versions.
         """
+        self._migrate_legacy_dit_state_dict(state_dict, self.state_dict())
+
         # Filter out keys that don't exist in the current model
         model_keys = set(self.state_dict().keys())
         checkpoint_keys = set(state_dict.keys())
@@ -168,7 +299,7 @@ class ViolinDiffusionModule(LightningModule):
         # Filter out keys we know are safe to ignore (e.g. optional components not
         # present in every config, such as an older checkpoint from a component that
         # has since been dropped from the architecture).
-        safe_to_ignore_prefixes: list[str] = []
+        safe_to_ignore_prefixes = ["codec_model."]
 
         filtered_unexpected = []
         for key in unexpected_keys:
@@ -339,7 +470,7 @@ class ViolinDiffusionModule(LightningModule):
 
     @torch.no_grad()
     def synthesize_from_noise(self, initial_noise, conditioning, ema_model=None, **sampling_kwargs):
-        # conditioning is a dict of {midi_tokens, tech_tokens, cc_tokens}
+        # Conditioning contains MIDI-roll, technique-roll, and CC frames.
         # initial_noise: (B, C, H, W) or (B, C, T)
 
         # Sampler expects (x, classes, ...)
@@ -356,8 +487,7 @@ class ViolinDiffusionModule(LightningModule):
         # src/models/components/sampler_rf.py: forward(self, noise, classes, fn, net, sigmas)
         # It calls: denoised = fn(x, sigma, classes) -> net(x, sigma, classes)
 
-        # DiT.forward signature: (x, t, classes, ..., midi_tokens, ...)
-        # So passing conditioning as kwargs to net is fine IF sampler supports it.
+        # Passing conditioning as keyword arguments is supported by the sampler.
         # The sampler in repo:
         # d = fn(x_hat, sigma_hat * s_in, **extra_args)
         # So we can pass 'extra_args'.
@@ -574,66 +704,80 @@ class ViolinDiffusionModule(LightningModule):
                     print(f"Warning: failed to define W&B step metric: {e}")
 
         if self.use_ema:
-             # Import based on repo structure
-             from .phema import PowerFunctionEMA, TraditionalEMA
-             if self.use_phema:
-                 self.ema_prof = PowerFunctionEMA(self.net.to(self.device), stds=[0.050, 0.100])
-             else:
-                 self.ema_prof = TraditionalEMA(self.net.to(self.device), halflife_Mimg=0.3, rampup_ratio=0.09)
+            from .phema import PowerFunctionEMA, TraditionalEMA
+            if self.use_phema:
+                self.ema_prof = PowerFunctionEMA(self.net.to(self.device), stds=[0.050, 0.100])
+            else:
+                self.ema_prof = TraditionalEMA(self.net.to(self.device), halflife_Mimg=0.3, rampup_ratio=0.09)
 
-             # Resume EMA from snapshot if provided
-             if self.ema_resume_path is not None:
-                 print(f"Loading EMA snapshot from {self.ema_resume_path}...")
-                 with open(self.ema_resume_path, 'rb') as f:
-                     ema_snapshot = pickle.load(f)
+            checkpoint_ema_state = getattr(self, "_checkpoint_ema_state", None)
+            if checkpoint_ema_state is not None:
+                if self.use_phema:
+                    for ema_state in checkpoint_ema_state["emas"]:
+                        self._migrate_legacy_dit_state_dict(ema_state, self.net.state_dict())
+                else:
+                    self._migrate_legacy_dit_state_dict(checkpoint_ema_state, self.net.state_dict())
+                self.ema_prof.load_state_dict(checkpoint_ema_state)
+                self.cur_nitem = int(self._checkpoint_ema_cur_nitem)
+                print(
+                    f"Restored EMA state with cur_nitem={self.cur_nitem} "
+                    "from the Lightning checkpoint."
+                )
+            elif self.ema_resume_path is not None:
+                print(f"Loading EMA snapshot from {self.ema_resume_path}...")
+                with open(self.ema_resume_path, 'rb') as f:
+                    ema_snapshot = pickle.load(f)
+                ema_state = ema_snapshot.state_dict()
+                self._migrate_legacy_dit_state_dict(ema_state, self.net.state_dict())
+                if self.use_phema:
+                    for ema in self.ema_prof.emas:
+                        ema.load_state_dict(ema_state)
+                else:
+                    self.ema_prof.load_state_dict(ema_state)
+                del ema_snapshot, ema_state
 
-                 # Load state into ema_prof
-                 if self.use_phema:
-                     # For PowerFunctionEMA, we need to copy weights to each ema
-                     for ema in self.ema_prof.emas:
-                         ema.load_state_dict(ema_snapshot.state_dict())
-                 else:
-                     # For TraditionalEMA
-                     self.ema_prof.ema.load_state_dict(ema_snapshot.state_dict())
-
-                 del ema_snapshot
-
-                 # Restore cur_nitem so the EMA rampup schedule continues correctly.
-                 # cur_nitem accumulates `batch_size` per micro-batch, so at optimizer step G it
-                 # equals G * batch_size * accumulate_grad_batches. Snapshots are named by G
-                 # (``ema_prof{suffix}_{global_step}``), so when ema_resume_nitem is not given we
-                 # recover G from the filename and rescale by the effective per-step item count.
-                 if self.ema_resume_nitem is not None:
-                     self.cur_nitem = self.ema_resume_nitem
-                     print(f"Restored cur_nitem to {self.cur_nitem}")
-                 else:
-                     step = self._parse_step_from_snapshot_path(self.ema_resume_path)
-                     items_per_step = self._effective_items_per_step()
-                     if step is not None and items_per_step is not None:
-                         self.cur_nitem = step * items_per_step
-                         print(
-                             f"Inferred cur_nitem={self.cur_nitem} (= global_step {step} "
-                             f"x {items_per_step} items/step) from snapshot filename "
-                             f"'{os.path.basename(self.ema_resume_path)}'."
-                         )
-                     elif step is not None:
-                         self.cur_nitem = step
-                         print(
-                             f"Warning: recovered global_step={step} from the snapshot filename but "
-                             "could not determine batch_size x accumulate_grad_batches; falling back to "
-                             "cur_nitem=global_step (EMA rampup may be off). Pass ema_resume_nitem to override."
-                         )
-                     else:
-                         print(
-                             "Warning: ema_resume_nitem not provided and could not be parsed from the "
-                             "snapshot filename; EMA rampup schedule may be off."
-                         )
+                snapshot_step = self._parse_step_from_snapshot_path(self.ema_resume_path)
+                if self.ema_resume_nitem is not None:
+                    self.cur_nitem = int(self.ema_resume_nitem)
+                    print(f"Restored cur_nitem to {self.cur_nitem}")
+                else:
+                    items_per_step = self._effective_items_per_step()
+                    if snapshot_step is not None and items_per_step is not None:
+                        self.cur_nitem = snapshot_step * items_per_step
+                        print(
+                            f"Inferred cur_nitem={self.cur_nitem} (= global_step {snapshot_step} "
+                            f"x {items_per_step} items/step) from snapshot filename "
+                            f"'{os.path.basename(self.ema_resume_path)}'."
+                        )
+                    elif snapshot_step is not None:
+                        self.cur_nitem = snapshot_step
+                        print(
+                            f"Warning: recovered global_step={snapshot_step} from the snapshot filename but "
+                            "could not determine batch_size x accumulate_grad_batches; falling back to "
+                            "cur_nitem=global_step (EMA rampup may be off). Pass ema_resume_nitem to override."
+                        )
+                    else:
+                        print(
+                            "Warning: ema_resume_nitem not provided and could not be parsed from the "
+                            "snapshot filename; EMA rampup schedule may be off."
+                        )
+            else:
+                checkpoint_step = int(getattr(self, "_checkpoint_global_step", 0) or 0)
+                if checkpoint_step > 0:
+                    items_per_step = self._effective_items_per_step()
+                    if items_per_step is None:
+                        raise RuntimeError("Cannot infer EMA cur_nitem without batch size and accumulation settings.")
+                    self.cur_nitem = checkpoint_step * items_per_step
+                    print(
+                        "Warning: resumed a checkpoint without EMA state or ema_resume_path; "
+                        "EMA weights were initialized from the resumed online model."
+                    )
 
     @staticmethod
     def _parse_step_from_snapshot_path(path: str) -> Optional[int]:
         """Extract the trailing ``{global_step}`` integer from an ``ema_prof..._{step}`` filename."""
-        stem = os.path.splitext(os.path.basename(str(path)))[0]
-        tail = stem.split("_")[-1]
+        tail = os.path.basename(str(path)).rsplit("_", 1)[-1]
+        tail = os.path.splitext(tail)[0]
         try:
             return int(tail)
         except (TypeError, ValueError):
@@ -658,6 +802,44 @@ class ViolinDiffusionModule(LightningModule):
             return int(batch_size) * int(accum)
         except (TypeError, ValueError):
             return None
+
+    def _save_ema_snapshot(self, step: int) -> None:
+        ema_list = self.ema_prof.get()
+        ema_list = ema_list if isinstance(ema_list, list) else [(ema_list, '')]
+        ema_snapshot_path = os.path.join(self.logger.save_dir, 'ema_snapshots')
+        os.makedirs(ema_snapshot_path, exist_ok=True)
+        for ema_net, ema_suffix in ema_list:
+            device_prev = next(ema_net.parameters()).device
+            ema_net.to("cpu")
+            try:
+                ema_snapshot = copy.deepcopy(ema_net).eval().requires_grad_(False).to(torch.float16)
+                snapshot_file = os.path.join(
+                    ema_snapshot_path,
+                    f'ema_prof{ema_suffix}_{step}',
+                )
+                with open(snapshot_file, 'wb') as f:
+                    pickle.dump(ema_snapshot, f)
+                del ema_snapshot
+            finally:
+                ema_net.to(device_prev)
+
+        self._prune_ema_snapshots(ema_snapshot_path)
+
+    def _prune_ema_snapshots(self, snapshot_dir: str) -> None:
+        if self.max_ema_snapshots is None:
+            return
+
+        snapshots_by_step: dict[int, list[str]] = {}
+        for filename in os.listdir(snapshot_dir):
+            if not filename.startswith("ema_prof"):
+                continue
+            step = self._parse_step_from_snapshot_path(filename)
+            if step is not None:
+                snapshots_by_step.setdefault(step, []).append(os.path.join(snapshot_dir, filename))
+
+        for step in sorted(snapshots_by_step)[:-self.max_ema_snapshots]:
+            for path in snapshots_by_step[step]:
+                os.remove(path)
 
     def _log_metrics_with_trainer_step(self, metrics: dict) -> None:
         """Send custom logger payloads at the same step source Lightning uses."""
@@ -1016,8 +1198,8 @@ class ViolinDiffusionModule(LightningModule):
         self.log_validation_samples(anchor_batch, stage="train", custom_keys=custom_keys)
 
     def _log_attention_weights(self, batch: dict):
-        """Log attention weights from DiT blocks to wandb (self-attn and cross-attn for serial mode)."""
-        if not hasattr(self.net, "attention_mode") or self.global_rank != 0:
+        """Log self-attention weights from DiT blocks to wandb."""
+        if self.global_rank != 0:
             return
         if not hasattr(self.logger, "experiment") or not hasattr(self.logger.experiment, "log"):
             return
@@ -1036,7 +1218,7 @@ class ViolinDiffusionModule(LightningModule):
             zt = zt.to(audio_latents.dtype)
 
             kwargs = {}
-            for k in ("midi_tokens", "tech_tokens", "velocity_tokens", "pos_midi", "cc_tokens", "midi_roll", "tech_roll", "midi_length", "tech_length"):
+            for k in ("cc_tokens", "midi_roll", "tech_roll"):
                 if k in batch and batch[k] is not None:
                     v = batch[k]
                     kwargs[k] = v[:1].to(self.device, non_blocking=True) if isinstance(v, torch.Tensor) else v
@@ -1179,27 +1361,17 @@ class ViolinDiffusionModule(LightningModule):
                  if scaler is not None:
                      self.log("train/amp_scale", scaler.get_scale(), on_step=True, on_epoch=False, prog_bar=False, sync_dist=True, batch_size=batch_size)
 
-        # EMA update
+        # Preserve the original sample-based EMA update and snapshot boundary.
         if self.use_ema:
-            # Use boundary-crossing check so snapshots trigger even when resuming with non-aligned cur_nitem
-            _inc = batch_size
-            _crossed = (int(self.cur_nitem + _inc) // self.num_ema_snapshot_item) > (int(self.cur_nitem) // self.num_ema_snapshot_item)
-            if _crossed and self.trainer.global_rank == 0 and self.global_step > 0:
-                ema_list = self.ema_prof.get()
-                ema_list = ema_list if isinstance(ema_list, list) else [(ema_list, '')]
-                for ema_net, ema_suffix in ema_list:
-                    ema_snapshot_path = os.path.join(self.logger.save_dir, 'ema_snapshots')
-                    os.makedirs(ema_snapshot_path, exist_ok=True)
-                    device_prev = next(ema_net.parameters()).device
-                    ema_net.to("cpu")
-                    try:
-                        ema_snapshot = copy.deepcopy(ema_net).eval().requires_grad_(False).to(torch.float16)
-                        with open(os.path.join(ema_snapshot_path, f'ema_prof{ema_suffix}_{self.global_step}'), 'wb') as f:
-                            pickle.dump(ema_snapshot, f)
-                        del ema_snapshot
-                    finally:
-                        ema_net.to(device_prev)
-
+            snapshot_interval = self.num_ema_snapshot_item
+            crossed_snapshot_boundary = (
+                snapshot_interval is not None
+                and snapshot_interval > 0
+                and (int(self.cur_nitem + batch_size) // snapshot_interval)
+                > (int(self.cur_nitem) // snapshot_interval)
+            )
+            if crossed_snapshot_boundary and self.global_rank == 0 and self.global_step > 0:
+                self._save_ema_snapshot(int(self.global_step))
             self.cur_nitem += batch_size
             self.ema_prof.update(self.cur_nitem, batch_size)
 
@@ -1211,8 +1383,10 @@ class ViolinDiffusionModule(LightningModule):
             print(f"Loading EMA weights from {self.ema_ckpt_path}...")
             with open(self.ema_ckpt_path, "rb") as f:
                 ema_net = pickle.load(f)
-                target_dtype = next(self.net.parameters()).dtype
-                self.net = ema_net.to(device=self.device, dtype=target_dtype)
+            ema_state = ema_net.state_dict()
+            self._migrate_legacy_dit_state_dict(ema_state, self.net.state_dict())
+            self.net.load_state_dict(ema_state, strict=True)
+            del ema_net, ema_state
 
         if self.codec_model is None:
             print(f"Loading DACVAE from {self.codec_ckpt}...")

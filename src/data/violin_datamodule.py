@@ -827,6 +827,8 @@ class EvalMidiDataset(Dataset):
 
 class ViolinCollator:
     def __init__(self, silence_pair_prob: float = 0.0):
+        if not 0.0 <= silence_pair_prob <= 1.0:
+            raise ValueError("silence_pair_prob must be between 0 and 1")
         self.silence_pair_prob = silence_pair_prob
 
     @staticmethod
@@ -850,9 +852,12 @@ class ViolinCollator:
         if len(minibatch) == 0:
             return None
 
-        # Direction 1: inject ~3% silent MIDI-audio pairs.
+        # Stochastic rounding keeps the long-run sample ratio unbiased for small batches.
         if self.silence_pair_prob > 0.0:
-            n_silent = round(len(minibatch) * self.silence_pair_prob)
+            expected_silent = len(minibatch) * self.silence_pair_prob
+            n_silent = int(expected_silent)
+            if random.random() < expected_silent - n_silent:
+                n_silent += 1
             if n_silent > 0:
                 silent_indices = random.sample(range(len(minibatch)), n_silent)
                 for idx in silent_indices:

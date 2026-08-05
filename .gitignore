@@ -1,6 +1,8 @@
 # VIOLET release exclusions (do not track)
 .history/
 outputs/
+commands.sh
+midi_example/excerpt.mid
 train_FINALS.slurm
 _ISMIR_2026__VIOLET*.pdf
 audio_example/

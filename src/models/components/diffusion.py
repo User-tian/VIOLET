@@ -40,8 +40,8 @@ def _apply_cfg(
     w_tech = 0.0 if w_tech is None else float(w_tech)
     w_cc = 0.0 if w_cc is None else float(w_cc)
 
-    has_midi = _has_any_condition(kwargs, "midi_tokens", "midi_roll")
-    has_tech = _has_any_condition(kwargs, "tech_tokens", "tech_roll")
+    has_midi = _has_any_condition(kwargs, "midi_roll")
+    has_tech = _has_any_condition(kwargs, "tech_roll")
     has_cc = _has_any_condition(kwargs, "cc_tokens")
 
     # ------------------------------------------------------------------

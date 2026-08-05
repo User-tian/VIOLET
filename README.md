@@ -29,7 +29,7 @@ backbone via Adaptive Layer Normalization (AdaLN).
 Keep this list limited to public release metadata and assets; track implementation work in
 GitHub Issues.
 
-- [ ] After the arXiv submission, add the paper link and final authors to the BibTeX citation.
+- [ ] After the arXiv submission, add the paper link.
 - [ ] Publish the VIOLET and DACVAE checkpoints and fill in both checkpoint links.
 - [x] Upload the [excerpts used in the subjective study](subjective_study/).
 - [ ] Document the separate distribution terms for datasets and checkpoints.
@@ -37,12 +37,13 @@ GitHub Issues.
 ## Checkpoints
 
 Pre-trained checkpoints are hosted at the link below. Download and place them under
-`checkpoints/` (or point the config `ckpt_path` to their location).
+`checkpoints/` using the paths shown below. For a different location, override
+`model.ema_ckpt_path` or `encoder.finetuned_ckpt` as appropriate.
 
-| Model | Description |
-|-------|-------------|
-| VIOLET (Full) | DiT latent-diffusion model trained on all corpora |
-| DACVAE (violin) | Fine-tuned DACVAE decoder for 48 kHz violin |
+| Model | Description | Default path |
+|-------|-------------|--------------|
+| VIOLET (Full) | DiT latent-diffusion model trained on all corpora | `checkpoints/violet/ema_prof_99515` |
+| DACVAE (violin) | Fine-tuned DACVAE decoder for 48 kHz violin | `checkpoints/dacvae_ft/weights.pth` |
 
 ## Setup
 
@@ -120,11 +121,15 @@ which recursively globs `.mid`/`.midi` files (with keyswitch-encoded techniques,
 overriding `data.data_dir`:
 
 ```bash
-uv run python src/eval.py \
-  experiment=violin_synthesis_inference/violin_synthesis_inference.yaml \
+CUDA_VISIBLE_DEVICES=0 python src/eval.py \
   data=eval_midi data.data_dir=/path/to/your/midi_dir \
-  +trainer.precision=32 ckpt_path="/path/to/ckpt.ckpt"
+  +trainer.precision=32 \
+  experiment=violin_synthesis_inference/violin_synthesis_inference.yaml
 ```
+
+This experiment evaluates the EMA model configured by `model.ema_ckpt_path`; do not pass a
+Lightning `ckpt_path`. To select another EMA snapshot, override
+`model.ema_ckpt_path=/path/to/ema_prof_STEP`.
 
 If a MIDI file has no technique keyswitches or CC1 (dynamics) automation, `EvalMidiDataset` falls
 back to fixed defaults rather than erroring: technique `1` (sustain) and a CC1 value of 100/127
@@ -138,11 +143,14 @@ overlap-add long-audio sampler, which renders each window independently and cros
 resulting audio (not a latent-space blend):
 
 ```bash
-uv run python src/eval.py \
-  experiment=violin_synthesis_inference/violin_synthesis_inference.yaml \
+CUDA_VISIBLE_DEVICES=0 python src/eval.py \
   data=eval_midi data.data_dir=/path/to/your/midi_dir \
-  +trainer.precision=32 ++long_audio.enabled=true
+  +trainer.precision=32 ++long_audio.enabled=true \
+  experiment=violin_synthesis_inference/violin_synthesis_inference.yaml
 ```
+
+By default, long-audio rendering follows each MIDI through its actual end and adds a one-second
+tail. Set `long_audio.duration_seconds` only when a fixed output duration is intentional.
 
 ## Method overview
 
@@ -235,11 +243,6 @@ the keyswitches in [`configs/ks_config.yaml`](configs/ks_config.yaml) and the te
 | 11 | Legato (slur)       | 49 | Legato |
 | 12 | Legato (portamento) | 50 | Legato |
 
-Technique ID `0` denotes "no technique". The four bowing-style modifiers in
-`ks_config.yaml` — `style_normal`, `style_sordino` (con sordino), `style_sulpont`
-(sul ponticello), and `style_sultasto` (sul tasto) — are keyswitches understood by the
-renderer but are **not** part of the 12 conditioning classes.
-
 ### The 7 techniques used for evaluation
 
 While the CSV-TD training set contains all 12 technique labels, model development and
@@ -270,11 +273,12 @@ repository.
 ```bibtex
 @inproceedings{violet2026,
   title     = {{VIOLET}: High-Fidelity Violin Synthesis with Techniques and Dynamics},
-  author    = {TODO: authors},
+  author    = {Baotong Tian and Cynthia Lu and Vincent K. M. Cheung and Ting-Kang Wang and Jonathan Churchill and Zhiyao Duan},
   booktitle = {Proc. of the 27th Int. Society for Music Information Retrieval Conf.},
   year      = {2026},
   address   = {Abu Dhabi, UAE}
 }
+
 ```
 
 ## Acknowledgments

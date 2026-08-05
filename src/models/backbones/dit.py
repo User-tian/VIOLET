@@ -1,4 +1,3 @@
-import numpy as np
 from functools import partial
 from typing import Optional, Callable
 import torch
@@ -15,7 +14,6 @@ except ImportError:
 from .conditioner import (
     TimestepEmbedder,
     LabelEmbedder,
-    TextEmbedder,
     MidiHarmonicExtractor,
     CausalWarmupWrapper,
     TechRollExtractor,
@@ -124,7 +122,6 @@ class Mlp(nn.Module):
         bias = to_2tuple(bias)
         drop_probs = to_2tuple(drop)
         linear_layer = partial(nn.Conv2d, kernel_size=1) if use_conv else nn.Linear
-
         self.fc1 = linear_layer(in_features, hidden_features, bias=bias[0])
         self.act = act_layer()
         self.drop1 = nn.Dropout(drop_probs[0])
@@ -182,65 +179,22 @@ class DiTBlock(nn.Module):
     """
     def __init__(self, hidden_size,
                  num_heads, mlp_ratio=4.0,
-                 use_self_text_cond=True,
                  use_qk_l2norm=False, use_rope=True,
-                 use_absolute_timing_rope_cross_attn: bool = False,
-                 use_rope_in_cross_attn: bool = True,
-                 attention_mode: str = "standard",
                  self_rope_rotary_frac: float = 1.0,
-                 cross_rope_rotary_frac: float = 1.0,
-                 rope_cross_attn_apply_to_v: bool = False,
                  rope_max_seq_len: Optional[int] = None,
                  use_midi_roll_adaln: bool = False,
                  use_tech_roll_adaln: bool = False):
         super().__init__()
-        if attention_mode not in {"standard", "serial"}:
-            raise ValueError(f"Unsupported attention_mode: {attention_mode}")
-        self.attention_mode = attention_mode
-
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        if self.attention_mode == "serial":
-            self.self_attn = Attention(
-                dim=hidden_size,
-                heads=num_heads,
-                context_dim=hidden_size,
-                use_self_text_cond=False,
-                use_qk_l2norm=use_qk_l2norm,
-                use_rope=use_rope,
-                use_rope_in_cross_attn=False,
-                use_absolute_timing_rope_cross_attn=False,
-                self_rope_rotary_frac=self_rope_rotary_frac,
-                rope_max_seq_len=rope_max_seq_len,
-            )
-            self.norm_cross = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-            self.cross_attn = Attention(
-                dim=hidden_size,
-                heads=num_heads,
-                context_dim=hidden_size,
-                use_self_text_cond=False,
-                use_qk_l2norm=use_qk_l2norm,
-                use_rope=use_rope,
-                use_rope_in_cross_attn=use_rope_in_cross_attn,
-                use_absolute_timing_rope_cross_attn=use_absolute_timing_rope_cross_attn,
-                cross_rope_rotary_frac=cross_rope_rotary_frac,
-                rope_cross_attn_apply_to_v=rope_cross_attn_apply_to_v,
-                rope_max_seq_len=rope_max_seq_len,
-            )
-            mod_channels = 9 * hidden_size
-        else:
-            self.attn = Attention(dim=hidden_size,
-                                  heads=num_heads,
-                                  context_dim=hidden_size,
-                                  use_self_text_cond=use_self_text_cond,
-                                  use_qk_l2norm=use_qk_l2norm,
-                                  use_rope=use_rope,
-                                  use_absolute_timing_rope_cross_attn=use_absolute_timing_rope_cross_attn,
-                                  use_rope_in_cross_attn=use_rope_in_cross_attn,
-                                  self_rope_rotary_frac=self_rope_rotary_frac,
-                                  cross_rope_rotary_frac=cross_rope_rotary_frac,
-                                  rope_cross_attn_apply_to_v=rope_cross_attn_apply_to_v,
-                                  rope_max_seq_len=rope_max_seq_len)
-            mod_channels = 6 * hidden_size
+        self.self_attn = Attention(
+            dim=hidden_size,
+            heads=num_heads,
+            use_qk_l2norm=use_qk_l2norm,
+            use_rope=use_rope,
+            self_rope_rotary_frac=self_rope_rotary_frac,
+            rope_max_seq_len=rope_max_seq_len,
+        )
+        mod_channels = 6 * hidden_size
 
         self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
@@ -270,50 +224,21 @@ class DiTBlock(nn.Module):
             )
 
     def forward(self, x, c,
-                context=None,
-                context_mask=None,
-                pos_audio: Optional[Tensor] = None,
-                pos_midi: Optional[Tensor] = None,
                 cc_feats=None,
                 midi_roll_feats=None,
                 tech_roll_feats=None,
                 cc_keep=None,
                 return_attn_weights: bool = False):
 
-        # Global modulation
-        if self.attention_mode == "serial":
-            (
-                shift_msa,
-                scale_msa,
-                gate_msa,
-                shift_cross,
-                scale_cross,
-                gate_cross,
-                shift_mlp,
-                scale_mlp,
-                gate_mlp,
-            ) = self.adaLN_modulation(c).chunk(9, dim=1)
-        else:
-            shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
+        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
 
         # Convert global modulation to time-axis form, then add temporal condition modulations.
-        if self.attention_mode == "serial":
-            shift_msa = shift_msa.unsqueeze(1)
-            scale_msa = scale_msa.unsqueeze(1)
-            gate_msa = gate_msa.unsqueeze(1)
-            shift_cross = shift_cross.unsqueeze(1)
-            scale_cross = scale_cross.unsqueeze(1)
-            gate_cross = gate_cross.unsqueeze(1)
-            shift_mlp = shift_mlp.unsqueeze(1)
-            scale_mlp = scale_mlp.unsqueeze(1)
-            gate_mlp = gate_mlp.unsqueeze(1)
-        else:
-            shift_msa = shift_msa.unsqueeze(1)
-            scale_msa = scale_msa.unsqueeze(1)
-            gate_msa = gate_msa.unsqueeze(1)
-            shift_mlp = shift_mlp.unsqueeze(1)
-            scale_mlp = scale_mlp.unsqueeze(1)
-            gate_mlp = gate_mlp.unsqueeze(1)
+        shift_msa = shift_msa.unsqueeze(1)
+        scale_msa = scale_msa.unsqueeze(1)
+        gate_msa = gate_msa.unsqueeze(1)
+        shift_mlp = shift_mlp.unsqueeze(1)
+        scale_mlp = scale_mlp.unsqueeze(1)
+        gate_mlp = gate_mlp.unsqueeze(1)
 
         # Local (per-timestep) modulation: cc_feats, midi_roll_feats, tech_roll_feats
         # have time dim aligned with x (B, T, D); modulation is applied per position.
@@ -326,74 +251,30 @@ class DiTBlock(nn.Module):
             modulation_sources.append((tech_roll_feats, self.tech_roll_modulation))
 
         for src_feats, modulation in modulation_sources:
-            if self.attention_mode == "serial":
-                (
-                    shift_msa_src,
-                    scale_msa_src,
-                    gate_msa_src,
-                    shift_cross_src,
-                    scale_cross_src,
-                    gate_cross_src,
-                    shift_mlp_src,
-                    scale_mlp_src,
-                    gate_mlp_src,
-                ) = modulation(src_feats).chunk(9, dim=2)
-            else:
-                (
-                    shift_msa_src,
-                    scale_msa_src,
-                    gate_msa_src,
-                    shift_mlp_src,
-                    scale_mlp_src,
-                    gate_mlp_src,
-                ) = modulation(src_feats).chunk(6, dim=2)
+            (
+                shift_msa_src,
+                scale_msa_src,
+                gate_msa_src,
+                shift_mlp_src,
+                scale_mlp_src,
+                gate_mlp_src,
+            ) = modulation(src_feats).chunk(6, dim=2)
 
             shift_msa = shift_msa + shift_msa_src
             scale_msa = scale_msa + scale_msa_src
             gate_msa = gate_msa + gate_msa_src
-            if self.attention_mode == "serial":
-                shift_cross = shift_cross + shift_cross_src
-                scale_cross = scale_cross + scale_cross_src
-                gate_cross = gate_cross + gate_cross_src
             shift_mlp = shift_mlp + shift_mlp_src
             scale_mlp = scale_mlp + scale_mlp_src
             gate_mlp = gate_mlp + gate_mlp_src
 
         block_attn = {}
-        if self.attention_mode == "serial":
-            out_sa = self.self_attn(
-                modulate(self.norm1(x), shift_msa, scale_msa),
-                context=None,
-                context_mask=None,
-                return_attn_weights=return_attn_weights,
-            )
-            if return_attn_weights:
-                out_sa, block_attn["self_attn"] = out_sa
-            x = x + gate_msa * out_sa
-            if context is not None:
-                out_ca = self.cross_attn(
-                    modulate(self.norm_cross(x), shift_cross, scale_cross),
-                    context,
-                    context_mask,
-                    pos_audio=pos_audio,
-                    pos_midi=pos_midi,
-                    return_attn_weights=return_attn_weights,
-                )
-                if return_attn_weights:
-                    out_ca, block_attn["cross_attn"] = out_ca
-                x = x + gate_cross * out_ca
-        else:
-            out_attn = self.attn(
-                modulate(self.norm1(x), shift_msa, scale_msa),
-                context,
-                context_mask,
-                pos_audio=pos_audio,
-                pos_midi=pos_midi,
-                return_attn_weights=return_attn_weights,
-            )
-            if return_attn_weights:
-                out_attn, block_attn["attn"] = out_attn
-            x = x + gate_msa * out_attn
+        out_attn = self.self_attn(
+            modulate(self.norm1(x), shift_msa, scale_msa),
+            return_attn_weights=return_attn_weights,
+        )
+        if return_attn_weights:
+            out_attn, block_attn["self_attn"] = out_attn
+        x = x + gate_msa * out_attn
         x = x + gate_mlp * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
         if return_attn_weights:
             return x, block_attn
@@ -470,25 +351,12 @@ class DiT(nn.Module):
         num_classes=None,
         class_embed_dim=None,
         label_cond=False,
-        text_cond=False,
-        text_embed_dim=512,
-        max_text_len=128,
-        use_self_text_cond=True,
-        use_rope_in_cross_attn=True,
-        use_absolute_timing_rope_cross_attn: bool = False,
-        attention_mode: str = "standard",
         self_rope_rotary_frac: float = 1.0,
-        cross_rope_rotary_frac: float = 1.0,
-        rope_cross_attn_apply_to_v: bool = False,
         use_qk_l2norm=False,
 
-        # Violin Synthesis conditioning: MIDI-roll (harmonic CQT-like) and technique-roll,
-        # both applied via per-timestep AdaLN modulation. This is the only combination
-        # supported here (see configs/experiment/violin_synthesis*); the token/crossattn/
-        # concat condition paths and the "downsample" MIDI extractor variant, which were
-        # never used by any shipped config, have been removed.
+        # Violin synthesis uses MIDI-roll, technique-roll, and CC features exclusively
+        # through per-timestep adaLN modulation.
         use_cc=False,
-        audio_use_sinusoidal_pos_emb=True,
         midi_roll_input_pitches: int = 51,
         midi_roll_top_k: int = 5,
         midi_roll_cqt_bins: int = 84,
@@ -517,13 +385,10 @@ class DiT(nn.Module):
         self.midi_roll_interp_to_latent = midi_roll_interp_to_latent
         self.midi_roll_warmup_frames = midi_roll_warmup_frames
         self.tech_roll_temporal_resize_mode = tech_roll_temporal_resize_mode
-        self.audio_use_sinusoidal_pos_emb = audio_use_sinusoidal_pos_emb
-        self.attention_mode = attention_mode
 
         self.x_embedder = AudioTokenEmbed(in_channels, hidden_size)
         self.t_embedder = TimestepEmbedder(hidden_size, hidden_size)
         self.y_embedder = LabelEmbedder(num_classes, class_embed_dim, hidden_size, hidden_size) if label_cond else None
-        self.text_conditioner = TextEmbedder(hidden_size, text_embed_dim, max_text_len) if text_cond else None
 
         self.tech_roll_extractor = TechRollExtractor(
             num_techniques=tech_roll_num_techniques,
@@ -552,20 +417,10 @@ class DiT(nn.Module):
             # CC embedder for temporal FiLM (1 channel input)
             self.cc_frame_embedder = CCEmbedder(1, hidden_size)
 
-        num_patches = self.input_size
-        # Fixed sin-cos embedding:
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
-
         self.blocks = nn.ModuleList([
             DiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio,
-                     use_self_text_cond=use_self_text_cond,
                      use_qk_l2norm=use_qk_l2norm, use_rope=True,
-                     use_absolute_timing_rope_cross_attn=use_absolute_timing_rope_cross_attn,
-                     use_rope_in_cross_attn=use_rope_in_cross_attn,
-                     attention_mode=attention_mode,
                      self_rope_rotary_frac=self_rope_rotary_frac,
-                     cross_rope_rotary_frac=cross_rope_rotary_frac,
-                     rope_cross_attn_apply_to_v=rope_cross_attn_apply_to_v,
                      use_midi_roll_adaln=True,
                      use_tech_roll_adaln=True) for _ in range(depth)
         ])
@@ -580,11 +435,6 @@ class DiT(nn.Module):
                 if module.bias is not None:
                     nn.init.constant_(module.bias, 0)
         self.apply(_basic_init)
-
-        # Initialize (and freeze) pos_embed by sin-cos embedding:
-        pos = np.arange(self.input_size)
-        pos_embed = get_1d_sincos_pos_embed_from_grid(self.pos_embed.shape[-1], pos)
-        self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
         w = self.x_embedder.proj.weight.data
@@ -636,8 +486,6 @@ class DiT(nn.Module):
                 x: Tensor,
                 t: Tensor,
                 classes:Optional[Tensor] = None,         # class labels or class embeddings
-                text_embeds:Optional[Tensor] = None,         # text embeddings
-                text_mask:Optional[Tensor] = None,
                 cc_tokens: Optional[Tensor] = None,
                 midi_roll: Optional[Tensor] = None,
                 tech_roll: Optional[Tensor] = None,
@@ -648,8 +496,7 @@ class DiT(nn.Module):
                 tech_cond_drop_prob: Optional[float] = None,
                 cc_cond_drop_prob: Optional[float] = None,
                 return_attn_weights: bool = False,
-                attn_block_indices: Optional[list] = None,
-                **kwargs):
+                attn_block_indices: Optional[list] = None):
         """
         Forward pass of DiT.
         x: (N, C, T) tensor of audio inputs
@@ -714,8 +561,6 @@ class DiT(nn.Module):
                 target_len=x.shape[1],
                 cc_keep=tech_keep,
             )
-        if self.audio_use_sinusoidal_pos_emb:
-            x = x + self.pos_embed  # (N, T, D)
         t = self.t_embedder(t)                   # (N, D)
 
         if exists(classes):
@@ -737,37 +582,6 @@ class DiT(nn.Module):
                 cc_keep = sampled_keep if cc_keep is None else cc_keep * sampled_keep
             cc_feats = self.cc_frame_embedder(cc_tokens, target_len=T, cc_keep=cc_keep)  # (B, T, D), blends null when dropped
 
-
-        # Collect conditioning contexts (Cross-Attention)
-        contexts = []
-        masks = []
-
-        # Text condition
-        if exists(text_embeds):
-            text_context, text_mask = self.text_conditioner(text_embeds, text_mask, cond_drop_prob)
-            contexts.append(text_context)
-            if text_mask is not None:
-                masks.append(text_mask)
-            else:
-                # Assuming no mask means all valid
-                masks.append(torch.ones((text_context.shape[0], text_context.shape[1]), device=text_context.device).bool())
-
-        if len(contexts) > 0:
-            context = torch.cat(contexts, dim=1)
-            # Combine masks
-            if len(masks) > 0:
-                context_mask = torch.cat(masks, dim=1)
-            else:
-                context_mask = None
-        else:
-            context = None
-            context_mask = None
-
-        # Absolute-timing RoPE cross-attn was only ever wired to the (now removed) MIDI
-        # token cross-attention context, so there is no source of positions left to use.
-        pos_audio_ctx = None
-        pos_midi_ctx = None
-
         all_attn_weights = {}
         attn_block_index_set = None
         if return_attn_weights and attn_block_indices is not None:
@@ -782,10 +596,6 @@ class DiT(nn.Module):
             out = block(
                 x,
                 c,
-                context,
-                context_mask,
-                pos_audio=pos_audio_ctx,
-                pos_midi=pos_midi_ctx,
                 cc_feats=cc_feats,
                 midi_roll_feats=midi_roll_feats,
                 tech_roll_feats=tech_roll_feats,

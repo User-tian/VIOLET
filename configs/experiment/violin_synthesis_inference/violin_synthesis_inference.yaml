@@ -22,10 +22,11 @@ data:
   midi_roll_min_pitch: 55
   midi_roll_max_pitch: 105
   num_techniques: 13
-
+encoder:
+  finetuned_ckpt: ${paths.root_dir}/checkpoints/dacvae_ft/weights.pth
 model:
   use_ema: True
-  ema_ckpt_path: logs/violin_newcurri_newattn_midiroll_techroll_bothadaln/runs/2026-03-21_22-10-42/ema_snapshots/ema_prof_98920
+  ema_ckpt_path: ${paths.root_dir}/checkpoints/violet/ema_prof_99515
   log_target_audio_paths: null
   net:
     depth: 12
@@ -38,15 +39,8 @@ model:
     midi_roll_cqt_bins: 84
     midi_roll_projection: conv1d
     midi_roll_interp_to_latent: True
-    midi_roll_warmup_frames: 104
-    attention_mode: serial
+    midi_roll_warmup_frames: 0
     self_rope_rotary_frac: 0.5
-    cross_rope_rotary_frac: 1.0
-    rope_cross_attn_apply_to_v: true
-    audio_use_sinusoidal_pos_emb: false
-    use_self_text_cond: false
-    use_rope_in_cross_attn: true
-    use_absolute_timing_rope_cross_attn: false
 
   sampler:
     _target_: src.models.components.sampler_rf.ReflowEulerSampler

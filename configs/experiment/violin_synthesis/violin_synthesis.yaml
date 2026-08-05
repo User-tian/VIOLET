@@ -28,21 +28,19 @@ data:
   # Curriculum params
   stage1_steps: 20000
   stage_transition_steps: 10000
-  # 2 types of ratio assignments: real:synth or per-dataset ratios
-  # stage1_ratio: 0.8 # 8:2 Real:Synth
-  # stage2_ratio: 0.3 # 3:7 Real:Synth
-  stage1_ratios:
-    violet: 0.1      # 10%
-    mosa_vpt: 0.1    # 10%
-    musc: 0.4    # 40%
-    mosa_real: 0.4   # 40%
 
-  # Optional: different ratios for stage 2
-  stage2_ratios:
-    violet: 0.6     # 60%
+  stage1_ratios:
+    violet: 0.6      # 60%
     mosa_vpt: 0.2    # 20%
     musc: 0.1        # 10%
     mosa_real: 0.1   # 10%
+
+  # Optional: different ratios for stage 2
+  stage2_ratios:
+    violet: 0.4      # 40%
+    mosa_vpt: 0.1    # 10%
+    musc: 0.25       # 25%
+    mosa_real: 0.25  # 25%
 
   batch_size: 16
   num_workers: 8
@@ -51,6 +49,9 @@ data:
   persistent_workers: True
   pitch_augmentation: True
   prefetch_factor: 1 # can be null for none
+  silence_pair_prob: 0.03
+  leading_silence_prob: 0.0
+  leading_silence_delta_ms: 30
   # DiT settings
   midi_roll_min_pitch: 55
   midi_roll_max_pitch: 105
@@ -59,7 +60,7 @@ data:
 # Model overrides
 model:
   ema_resume_path: null
-  ema_resume_nitem: null
+  max_ema_snapshots: 3
   stage1_steps: ${data.stage1_steps}
   log_audio_every_n_steps: 5000
   lr_scheduler_interval: step
@@ -82,17 +83,7 @@ model:
     midi_cond_drop_prob: 0.0
     tech_cond_drop_prob: 0.4
     cc_cond_drop_prob: 0.2
-    # Absolute-timing cross-attention variant
-    # Serial attention block:
-    attention_mode: serial
     self_rope_rotary_frac: 0.5
-    cross_rope_rotary_frac: 1.0
-    rope_cross_attn_apply_to_v: true
-    audio_use_sinusoidal_pos_emb: false
-    use_self_text_cond: false
-    use_rope_in_cross_attn: true
-    # Absolute-timing RoPE for cross-attention
-    use_absolute_timing_rope_cross_attn: false
 
 trainer:
   max_steps: 100000 # Total steps (Stage 1 + Stage 2)
@@ -111,9 +102,9 @@ callbacks:
     dirpath: ${paths.output_dir}/checkpoints
     filename: "step_{step:06d}"
     every_n_train_steps: 5000
-    save_top_k: -1
+    save_top_k: 1
     monitor: null
-    save_last: True
+    save_last: link
 
 logger:
   wandb:

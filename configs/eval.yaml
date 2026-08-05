@@ -37,7 +37,8 @@ weights_only: null
 # Optional one-off file (bypasses datamodule list): long_audio.midi_path=/path/to/one.mid
 long_audio:
   enabled: false
-  duration_seconds: 30.0
+  # null renders each MIDI through its actual end; set a number only to force a fixed duration.
+  duration_seconds: null
   overlap: 0.5
   midi_path: null
   output_dir: null
