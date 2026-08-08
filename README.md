@@ -39,8 +39,8 @@ Pre-trained checkpoints are hosted at the link below. Download and place them un
 
 | Model | Description | Default path |
 |-------|-------------|--------------|
-| VIOLET (Full) | DiT latent-diffusion model trained on all corpora | `pretrained_checkpoint/ema_snapshots/ema_prof_99515` |
-| DACVAE (violin) | Fine-tuned DACVAE decoder for 48 kHz violin | `dacvae_ft/weights.pth` |
+| VIOLET (Full) | DiT latent-diffusion model trained on all corpora | `checkpoints/pretrained_checkpoint/ema_snapshots/ema_prof_99515` |
+| DACVAE (violin) | Fine-tuned DACVAE decoder for 48 kHz violin | `checkpoints/dacvae_ft/weights.pth` |
 
 ## Setup
 
