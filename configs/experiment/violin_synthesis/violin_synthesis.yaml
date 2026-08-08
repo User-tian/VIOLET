@@ -81,7 +81,7 @@ model:
     midi_roll_interp_to_latent: True
     cond_drop_prob: null
     midi_cond_drop_prob: 0.0
-    tech_cond_drop_prob: 0.4
+    tech_cond_drop_prob: 0.2
     cc_cond_drop_prob: 0.2
     self_rope_rotary_frac: 0.5
 

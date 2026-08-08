@@ -2,7 +2,6 @@
 .history/
 outputs/
 commands.sh
-midi_example/excerpt.mid
 train_FINALS.slurm
 _ISMIR_2026__VIOLET*.pdf
 audio_example/
@@ -28,6 +27,8 @@ __pycache__/
 .Python
 build/
 checkpoints/
+dacvae_ft/
+pretrained_checkpoint/
 develop-eggs/
 dist/
 downloads/

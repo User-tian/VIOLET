@@ -23,10 +23,10 @@ data:
   midi_roll_max_pitch: 105
   num_techniques: 13
 encoder:
-  finetuned_ckpt: ${paths.root_dir}/checkpoints/dacvae_ft/weights.pth
+  finetuned_ckpt: ${paths.root_dir}/dacvae_ft/weights.pth
 model:
   use_ema: True
-  ema_ckpt_path: ${paths.root_dir}/checkpoints/violet/ema_prof_99515
+  ema_ckpt_path: ${paths.root_dir}/pretrained_checkpoint/ema_snapshots/ema_prof_99515
   log_target_audio_paths: null
   net:
     depth: 12

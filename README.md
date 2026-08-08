@@ -17,33 +17,36 @@ backbone via Adaptive Layer Normalization (AdaLN).
 
 ## Links
 
-- 🎧 [**Demo page**](https://User-tian.github.io/VIOLET_demo)
-- 📄 **Paper:** [TODO: add arXiv URL]
-- 💾 [**Checkpoints**](https://huggingface.co/datasets/User-tian/VIOLET)
-- 📦 [**Dataset**](https://huggingface.co/datasets/User-tian/CSV-TD)
+- 🎧 **Demo page:** coming soon
+- 📄 **Paper:** arXiv link coming soon
+- 💾 **Checkpoints:** coming soon
+- 📦 **Dataset:** coming soon
 - 🎼 [**Subjective-study excerpts**](subjective_study/)
-- 🎹 [**Batched offline MIDI2Audio renderer**](https://github.com/User-tian/MidiForge)
+- 🎹 **Batched offline MIDI2Audio renderer:** coming soon
 
 ## Release checklist
 
 Keep this list limited to public release metadata and assets; track implementation work in
 GitHub Issues.
 
-- [ ] After the arXiv submission, add the paper link.
-- [ ] Publish the VIOLET and DACVAE checkpoints and fill in both checkpoint links.
+- [ ] After this repository is public, update arXiv and add the paper link.
+- [ ] Publish the demo page and restore its link.
+- [ ] Publish the VIOLET and DACVAE checkpoints and add their link.
+- [ ] Publish CSV-TD and add its dataset link.
+- [ ] Publish MidiForge and restore its link.
 - [x] Upload the [excerpts used in the subjective study](subjective_study/).
 - [ ] Document the separate distribution terms for datasets and checkpoints.
 
 ## Checkpoints
 
-Pre-trained checkpoints are hosted at the link below. Download and place them under
-`checkpoints/` using the paths shown below. For a different location, override
+Pre-trained checkpoints will be linked above when the release is public. Download and place
+them at the paths shown below. For a different location, override
 `model.ema_ckpt_path` or `encoder.finetuned_ckpt` as appropriate.
 
 | Model | Description | Default path |
 |-------|-------------|--------------|
-| VIOLET (Full) | DiT latent-diffusion model trained on all corpora | `checkpoints/violet/ema_prof_99515` |
-| DACVAE (violin) | Fine-tuned DACVAE decoder for 48 kHz violin | `checkpoints/dacvae_ft/weights.pth` |
+| VIOLET (Full) | DiT latent-diffusion model trained on all corpora | `pretrained_checkpoint/ema_snapshots/ema_prof_99515` |
+| DACVAE (violin) | Fine-tuned DACVAE decoder for 48 kHz violin | `dacvae_ft/weights.pth` |
 
 ## Setup
 
@@ -107,10 +110,14 @@ uv run python src/train.py \
 
 **Leading-silence augmentation (optional).** If your MIDI/audio pairs sometimes start with a note
 at `t=0` rather than a brief silence, set `data.leading_silence_prob` > 0 (with
-`data.leading_silence_delta_ms` controlling how much silence to insert, default `30`ms). Both
-default to `0` (off) in every shipped config. This randomly prepends a short silence during
+`data.leading_silence_delta_ms` controlling how much silence to insert, default `30`ms).
+`leading_silence_prob` defaults to `0` (off). This randomly prepends a short silence during
 training so the model learns a clean onset instead of assuming every clip starts mid-note —
 useful because inference-time MIDI doesn't always start exactly at `t=0` either.
+
+**Silent-pair augmentation.** `data.silence_pair_prob` is `0.03` in the training experiment.
+The collator uses stochastic rounding per batch, so 3% of training samples are silent in
+expectation even when a small batch cannot contain a fractional number of examples.
 
 ### Inference / Evaluation
 
@@ -130,6 +137,9 @@ CUDA_VISIBLE_DEVICES=0 python src/eval.py \
 This experiment evaluates the EMA model configured by `model.ema_ckpt_path`; do not pass a
 Lightning `ckpt_path`. To select another EMA snapshot, override
 `model.ema_ckpt_path=/path/to/ema_prof_STEP`.
+
+For a bundled input, set `data.data_dir=midi_example`. The example's provenance and
+CC BY 4.0 attribution are documented in [`midi_example/README.md`](midi_example/README.md).
 
 If a MIDI file has no technique keyswitches or CC1 (dynamics) automation, `EvalMidiDataset` falls
 back to fixed defaults rather than erroring: technique `1` (sustain) and a CC1 value of 100/127
@@ -184,7 +194,7 @@ recorded corpora (**MOSA**, **MUSC**) and one synthetic augmentation set (**MOSA
 | MUSC           | Real      |   939 | 48 kHz | Stereo, none                  | 30.9 h |
 
 During training we mix these with a curriculum that starts synthetic-heavy
-(CSV-TD : MOSA : MOSA_VPT : MUSC = 60 : 20 : 10 : 10) and shifts toward real recordings
+(CSV-TD : MOSA_VPT : MUSC : MOSA = 60 : 20 : 10 : 10) and shifts toward real recordings
 (40 : 10 : 25 : 25) to improve natural transitions and fidelity.
 
 ### CSV-TD — Controlled Synthetic Violin with Techniques and Dynamics
@@ -278,7 +288,6 @@ repository.
   year      = {2026},
   address   = {Abu Dhabi, UAE}
 }
-
 ```
 
 ## Acknowledgments

@@ -11,5 +11,5 @@ sample_rate: 48000
 frame_rate: 25.0
 posterior_mode: mean # mean or sample
 base_ckpt: facebook/dacvae-watermarked
-finetuned_ckpt: checkpoints/dacvae_ft/weights.pth # e.g. checkpoints/dacvae_ft/weights.pth
+finetuned_ckpt: ${paths.root_dir}/dacvae_ft/weights.pth
 use_finetuned: True

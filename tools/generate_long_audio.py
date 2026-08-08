@@ -570,7 +570,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--codec_ft_ckpt",
         type=str,
-        default="checkpoints/dacvae_ft/weights.pth",
+        default="dacvae_ft/weights.pth",
         help="Finetuned DACVAE weights path.",
     )
     parser.add_argument(
