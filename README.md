@@ -20,7 +20,7 @@ backbone via Adaptive Layer Normalization (AdaLN).
 - 🎧 [**Demo page**](https://User-tian.github.io/VIOLET_demo)
 - 📄 **Paper:** [TODO: add arXiv URL]
 - 💾 [**Checkpoints**](https://huggingface.co/datasets/User-tian/VIOLET)
-- 📦 [**Dataset**](https://huggingface.co/datasets/User-tian/CSV-TD)
+- 📦 [**Dataset**](https://huggingface.co/datasets/User-tian/CSV-TD) (working on license, coming soon)
 - 🎼 [**Subjective-study excerpts**](subjective_study/)
 - 🎹 [**Batched offline MIDI2Audio renderer**](https://github.com/User-tian/MidiForge)
 
