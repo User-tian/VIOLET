@@ -18,18 +18,11 @@ backbone via Adaptive Layer Normalization (AdaLN).
 ## Links
 
 - 🎧 [**Demo page**](https://User-tian.github.io/VIOLET_demo)
-- 📄 **Paper:** [TODO: add arXiv URL]
+- 📄 [**Paper:**](https://arxiv.org/abs/2608.07944)
 - 💾 [**Checkpoints**](https://huggingface.co/datasets/User-tian/VIOLET)
 - 📦 [**Dataset**](https://huggingface.co/datasets/User-tian/CSV-TD) (working on license, coming soon)
 - 🎼 [**Subjective-study excerpts**](subjective_study/)
-- 🎹 [**Batched offline MIDI2Audio renderer**](https://github.com/User-tian/MidiForge)
-
-## Release checklist
-
-Keep this list limited to public release metadata and assets; track implementation work in
-GitHub Issues.
-
-- [ ] After this repository is public, update arXiv and add the paper link.
+- 🎹 [**Batched offline MIDI2Audio renderer**](https://github.com/User-tian/MidiForge).
 
 ## Checkpoints
 
