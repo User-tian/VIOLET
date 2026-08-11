@@ -18,7 +18,7 @@ backbone via Adaptive Layer Normalization (AdaLN).
 ## Links
 
 - 🎧 [**Demo page**](https://User-tian.github.io/VIOLET_demo)
-- 📄 [**Paper:**](https://arxiv.org/abs/2608.07944)
+- 📄 [**Paper**](https://arxiv.org/abs/2608.07944)
 - 💾 [**Checkpoints**](https://huggingface.co/datasets/User-tian/VIOLET)
 - 📦 [**Dataset**](https://huggingface.co/datasets/User-tian/CSV-TD) (working on license, coming soon)
 - 🎼 [**Subjective-study excerpts**](subjective_study/)
